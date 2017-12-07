@@ -1,0 +1,319 @@
+<style>
+body { background:#f0e0e0; margin: 0; overflow: hidden; }
+</style>
+
+<script src="node_modules/cesium/Build/CesiumUnminified/Cesium.js"></script>
+<style>
+@import url(node_modules/cesium/Build/CesiumUnminified/Widgets/widgets.css);
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/88/three.min.js"></script>
+<script src="http://thematicmapping.org/playground/webgl/terrain/lib/TrackballControls.js"></script> 
+
+<!-- a slightly customized version of cesium code which returns some more data for us -->
+<!-- not being used right now - I ended up modifying the actual source code inside cesium to expose the data I wanted -->
+<!-- <script src="createQuantizedMeshTerrainData.js"></script/> -->
+
+<div style="width:640px;height:400px" id="webgl"></div>
+<h1>This is a test</h1>
+
+<script>
+
+// Useful links:
+//
+// http://blog.mastermaps.com/2014/10/3d-terrains-with-cesium.html
+// http://blog.mastermaps.com/2013/10/terrain-building-with-threejs.html
+// https://codepen.io/gjn19/pen/qOPOGQ
+// http://help.agi.com/TerrainServer/RESTAPIGuide.html
+// http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Lon..2Flat._to_tile_numbers_2
+// http://help.agi.com/TerrainServer/RESTAPIGuide.html
+// https://github.com/AnalyticalGraphicsInc/cesium/blob/15c3115267b67f0367468a457358973b70458410/Source/Core/CesiumTerrainProvider.js
+// http://assets.agi.com/stk-terrain/ViewTileset.html?tileset=v1%2Ftilesets%2Fworld%2Ftiles <- shows actual queries if you view network
+// https://github.com/AnalyticalGraphicsInc/cesium/blob/779918617c57c64bd6648393def28856a3d923bb/Source/Scene/GlobeSurfaceTileProvider.js
+// https://github.com/AnalyticalGraphicsInc/cesium/search?utf8=%E2%9C%93&q=tileimagery&type=
+//
+// Notes:
+//
+// Q: How can we ask the cesium machinery to load up entire clusters of tiles?
+//
+// there is some kind of quad tree
+//
+//     QuantizedMeshTerrainData.prototype.createMesh = function(tilingScheme, x, y, level, exaggeration) {
+//
+// startrenderloop(widget)
+//  GlobeSurfaceTileProvider.prototype.loadTile = function(frameState, tile) {
+//
+//     GlobeSurfaceTile.processStateMachine = function(tile, frameState, terrainProvider, imageryLayerCollection, vertexArraysToDestroy) {
+//
+//      -> QuantizedMeshTerrainData  -> it looks like tiles are in a tile hierarchy
+//          -> TileTerrain
+//             -> requestTileGeometry( tileTerrain, terrainProvider )
+//
+// Q: How do we line up image textures with tiles? Or have an abstraction over both as a single concept?
+//
+// I can query for individual tiles and I can separately query for image textures
+//    - textures may not be aligned
+//    - tiles are not aligned with each other
+//    - i don't know the scale of the tiles
+//    - i cannot see the scene graph
+//
+// 
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Convert quantized meshes to 3js.
+// This only works because I modified cesium itself to expose the vertices through the pipeline
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function meshto3js(scene,t,image,xpos,ypos) {
+
+if(!t.xVertices) { t.indices = t._indices; t.xVertices = t.uBuffer; t.yVertices = t.vBuffer; t.hVertices = t.heightBuffer; }
+
+  var factor = 1000.0;
+  var offset = 32767 / 2;
+  //var normalMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
+  var hasNormals = t.encodedNormalBuffer && t.encodedNormalBuffer.length == t.xVertices.length * 2;
+  var geo = new THREE.Geometry();
+  for (var i = 0; i < t.xVertices.length; i++) {
+    var v = new THREE.Vector3((t.xVertices[i]-offset)/factor, (t.yVertices[i]-offset)/factor, t.hVertices[i]/factor);
+    geo.vertices.push(v);
+    if (hasNormals) {
+      var normal = new Cesium.Cartesian3(0.0, 0.0, 0.0);
+      Cesium.AttributeCompression.octDecode(t.encodedNormalBuffer[i], t.encodedNormalBuffer[i+1], normal)
+      //Adding normal for this point (right now it's hard coded normal)
+      var threenormal = new THREE.Vector3(normal.x,normal.y,normal.z);
+      var other =new THREE.Vector3(v.x, v.y, v.z);
+      other.add(threenormal);
+      var normal = new THREE.Geometry();
+      normal.vertices.push(v);
+      normal.vertices.push(other);
+    }
+    //var line = new THREE.Line(normal, normalMaterial);
+    //scene.add(line);
+  }
+  for (var i = 0; i < t.indices.length - 1; i = i + 3) {
+    geo.faces.push(new THREE.Face3(t.indices[i], t.indices[i+1], t.indices[i+2]));
+  }
+  geo.computeFaceNormals();
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// a terrible hack to hammer in a uv map for now - improve later
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+let geometry = geo;
+
+geometry.computeBoundingBox();
+
+var max = geometry.boundingBox.max,
+    min = geometry.boundingBox.min;
+var offset = new THREE.Vector2(0 - min.x, 0 - min.y);
+var range = new THREE.Vector2(max.x - min.x, max.y - min.y);
+var faces = geometry.faces;
+
+geometry.faceVertexUvs[0] = [];
+
+for (var i = 0; i < faces.length ; i++) {
+
+    var v1 = geometry.vertices[faces[i].a], 
+        v2 = geometry.vertices[faces[i].b], 
+        v3 = geometry.vertices[faces[i].c];
+
+    geometry.faceVertexUvs[0].push([
+        new THREE.Vector2((v1.x + offset.x)/range.x ,(v1.y + offset.y)/range.y),
+        new THREE.Vector2((v2.x + offset.x)/range.x ,(v2.y + offset.y)/range.y),
+        new THREE.Vector2((v3.x + offset.x)/range.x ,(v3.y + offset.y)/range.y)
+    ]);
+}
+geometry.uvsNeedUpdate = true;
+//////////////////////////////////////////////////
+
+  var texture = new THREE.Texture( image );
+  texture.needsUpdate = true;
+
+  var material = new THREE.MeshPhongMaterial({
+    map: texture //image2 //THREE.ImageUtils.loadTexture('uvmap.jpg')
+    //color: 0xdddddd, wireframe: true
+  });
+  var thing = new THREE.Mesh(geo, material);
+  thing.position.set(xpos*35-50,-ypos*35+50,0);
+  scene.add(thing);
+
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+// make a fairly vanilla 3js scene
+//////////////////////////////////////////////////////////////////////////////////////
+
+function makescene() {
+
+  // some axes art
+  var width  = window.innerWidth;
+  var height = window.innerHeight;
+  var scene = new THREE.Scene();
+  var axes = new THREE.AxisHelper(2000000);
+  scene.add(axes);
+
+  // a camera
+  camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 1000);
+  camera.position.set(0, 0, 50);
+
+  // a light
+  var light = new THREE.PointLight( 0xffffff, 1, 100 );
+  light.position.set(0,0,60);
+  scene.add( light );
+
+  // a light representation
+  var sgeom = new THREE.SphereGeometry( 5, 32, 32 );
+  var material2 = new THREE.MeshBasicMaterial( {color: 0xffff00} );
+  var sphere = new THREE.Mesh( sgeom, material2 );
+  sphere.position.set(0,0,60);
+  scene.add( sphere )
+
+
+  var renderer = new THREE.WebGLRenderer({alpha:true});
+  renderer.setSize(width, height);
+  //renderer.setClearColor (0xff0000, 1);
+  var controls = new THREE.TrackballControls(camera); 
+  document.getElementById('webgl').appendChild(renderer.domElement);
+  function render() {
+    controls.update();    
+    requestAnimationFrame(render);
+    renderer.render(scene, camera);
+  }
+  render();
+
+  // Construct a terrain provider that uses per vertex normals for lighting to add shading detail to an imagery provider.
+  var terrainProvider = new Cesium.CesiumTerrainProvider({
+    requestVertexNormals : true, 
+    url:"https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles",
+    // url : '//assets.agi.com/stk-terrain/world',
+  });
+
+  /*
+  var imageryProvider = Cesium.createTileMapServiceImageryProvider({
+    url : '/node_modules/cesium/Source/Assets/Textures/NaturalEarthII',
+    fileExtension : 'jpg'
+  });
+  */
+
+  var imageryProvider = new Cesium.BingMapsImageryProvider({
+    url : 'https://dev.virtualearth.net',
+    key : 'RsYNpiMKfN7KuwZrt8ur~ylV3-qaXdDWiVc2F5NCoFA~AkXwps2-UcRkk2L60K5qBy5kPnTmwvxdfwl532NTheLdFfvYlVJbLnNWG1iC-RGL',
+    mapStyle : Cesium.BingMapsStyle.AERIAL
+  });
+
+  // Wait a bit then go and try pull some geometry and render it - this is a hack, it would be better to wait for a promise
+
+  setTimeout(function() { addtiles(terrainProvider,imageryProvider,scene); }, 2000 );
+
+  /*
+  if(0) {
+    // test - manually fetch some elevation and render it - this is not used right now
+    let path = 'https://assets.agi.com/stk-terrain/world/'+lod+'/'+x+'/'+y+'.terrain?v=1.16389.0';
+    Cesium.loadArrayBuffer(path).then(function(arrayBuffer) {
+      console.log("=================");
+      console.log("elevation data is loaded now rendering");
+      var t = createQuantizedMeshTerrainData(arrayBuffer, lod, x, y, 0);
+      meshto3js(scene,t);
+    }).otherwise(function(error) {
+      console.log('error occured ', error);
+    });
+  }*/
+
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// call the terrain provider as needed to fetch tiles and then paint them myself in 3js
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function addtiles(terrainProvider,imageryProvider,scene) {
+
+  lod = 15;
+  y = 0;
+  x = 0;
+
+  // mt hood
+  // var position = Cesium.Cartographic.fromDegrees(-121.6960,45.3736);
+  // grand canyon
+  //var position = Cesium.Cartographic.fromDegrees(-112.1401,36.0544);
+  // austin
+  var position = Cesium.Cartographic.fromDegrees(-97.7438834,30.2645103);
+
+  // get tile
+  var tilingScheme = terrainProvider.tilingScheme;
+  var xy = tilingScheme.positionToTileXY(position, lod);
+  console.log("============ tiling scheme");
+  console.log(xy);
+  x = xy.x;
+  y = xy.y;
+
+  console.log("We think that the tiles we want are around x="+x+" y="+y);
+/*
+
+URLs for the tiles around “110 E 2nd St, Austin, TX 78701” -
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14975/21894.terrain?v=1.31376.0
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14975/21893.terrain?v=1.31376.0
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14975/21892.terrain?v=1.31376.0
+
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14974/21894.terrain?v=1.31376.0
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14974/21893.terrain?v=1.31376.0
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14974/21892.terrain?v=1.31376.0
+
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21894.terrain?v=1.31376.0
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21893.terrain?v=1.31376.0
+https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21892.terrain?v=1.31376.0
+
+*/
+  x = 14973;
+  //y = 21892;
+
+  function maketile(x,y,i,j) {
+    // ask for geometry
+    var p1 = terrainProvider.requestTileGeometry(x+i,y+j,lod);
+    Cesium.when(p1,function(mesh) {
+      var p2 = imageryProvider.requestImage(x+i,y+j,lod);
+      Cesium.when(p2,function(image) {
+        meshto3js(scene,mesh,image,i,j);
+      }).otherwise(function(error) {
+        console.log('error occured ', error);
+      }); 
+    }).otherwise(function(error) {
+      console.log('error occured ', error);
+    }); 
+  }
+
+  // of course this is horribly wrong, it would be better to request a set of tiles that straddle an area
+  for(i=0;i<3;i++) {
+    for(j=0;j<3;j++) {
+      maketile(x,y,i,j);
+    }
+  }
+
+  // what is elevation here?
+  var promise = Cesium.sampleTerrain(terrainProvider, 11,[position]);
+  Cesium.when(promise, function(updatedPositions) {
+    console.log("===================positions updated");
+    console.log(position);
+    console.log(updatedPositions);
+  }).otherwise(function(error) {
+    console.log('error occured ', error);
+  }); 
+
+
+}
+
+
+// go!
+makescene();
+
+/*
+
+    var viewer = new Cesium.Viewer('webgl');
+
+var terrainProvider = new Cesium.CesiumTerrainProvider({
+    url : '//assets.agi.com/stk-terrain/world'
+});
+viewer.terrainProvider = terrainProvider;
+*/
+
+</script>
+
