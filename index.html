@@ -9,6 +9,8 @@ body { background:#f0e0e0; margin: 0; overflow: hidden; }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/88/three.min.js"></script>
 <script src="http://thematicmapping.org/playground/webgl/terrain/lib/TrackballControls.js"></script> 
+<script src="node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
+"
 
 <!-- a slightly customized version of cesium code which returns some more data for us -->
 <!-- not being used right now - I ended up modifying the actual source code inside cesium to expose the data I wanted -->
@@ -64,17 +66,24 @@ body { background:#f0e0e0; margin: 0; overflow: hidden; }
 // This only works because I modified cesium itself to expose the vertices through the pipeline
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-function meshto3js(scene,t,image,xpos,ypos) {
+let mycount = 0;
 
-if(!t.xVertices) { t.indices = t._indices; t.xVertices = t.uBuffer; t.yVertices = t.vBuffer; t.hVertices = t.heightBuffer; }
+function meshto3js(t) {
 
-  var factor = 1000.0;
-  var offset = 32767 / 2;
+  // I've modified cesium to pipe this data all the way through to me
+  if(!t.xVertices) { t.indices = t._indices; t.xVertices = t.uBuffer; t.yVertices = t.vBuffer; t.hVertices = t.heightBuffer; }
+
   //var normalMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
   var hasNormals = t.encodedNormalBuffer && t.encodedNormalBuffer.length == t.xVertices.length * 2;
   var geo = new THREE.Geometry();
   for (var i = 0; i < t.xVertices.length; i++) {
-    var v = new THREE.Vector3((t.xVertices[i]-offset)/factor, (t.yVertices[i]-offset)/factor, t.hVertices[i]/factor);
+
+    // center each tile at the center of the geometric object
+    let x = (t.xVertices[i]-16383.5) / 327.67;
+    let y = (t.yVertices[i]-16383.5) / 327.67;
+    let z = ((t.hVertices[i] * (t._maximumHeight - t._minimumHeight))  / 32767.0) + t._minimumHeight;
+
+    var v = new THREE.Vector3(x, y, z);
     geo.vertices.push(v);
     if (hasNormals) {
       var normal = new Cesium.Cartesian3(0.0, 0.0, 0.0);
@@ -125,16 +134,7 @@ for (var i = 0; i < faces.length ; i++) {
 geometry.uvsNeedUpdate = true;
 //////////////////////////////////////////////////
 
-  var texture = new THREE.Texture( image );
-  texture.needsUpdate = true;
-
-  var material = new THREE.MeshPhongMaterial({
-    map: texture //image2 //THREE.ImageUtils.loadTexture('uvmap.jpg')
-    //color: 0xdddddd, wireframe: true
-  });
-  var thing = new THREE.Mesh(geo, material);
-  thing.position.set(xpos*35-50,-ypos*35+50,0);
-  scene.add(thing);
+  return geo;
 
 }
 
@@ -152,12 +152,12 @@ function makescene() {
   scene.add(axes);
 
   // a camera
-  camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 1000);
-  camera.position.set(0, 0, 50);
+  camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 2000);
+  camera.position.set(0, 0, 200);
 
   // a light
-  var light = new THREE.PointLight( 0xffffff, 1, 100 );
-  light.position.set(0,0,60);
+  var light = new THREE.PointLight( 0xffffff, 1, 1000 );
+  light.position.set(0,0,100);
   scene.add( light );
 
   // a light representation
@@ -172,7 +172,9 @@ function makescene() {
   renderer.setSize(width, height);
   //renderer.setClearColor (0xff0000, 1);
   var controls = new THREE.TrackballControls(camera); 
+  controls.target.set(0,0,0);
   document.getElementById('webgl').appendChild(renderer.domElement);
+
   function render() {
     controls.update();    
     requestAnimationFrame(render);
@@ -241,38 +243,21 @@ function addtiles(terrainProvider,imageryProvider,scene) {
   // get tile
   var tilingScheme = terrainProvider.tilingScheme;
   var xy = tilingScheme.positionToTileXY(position, lod);
-  console.log("============ tiling scheme");
-  console.log(xy);
   x = xy.x;
   y = xy.y;
-
-  console.log("We think that the tiles we want are around x="+x+" y="+y);
-/*
-
-URLs for the tiles around “110 E 2nd St, Austin, TX 78701” -
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14975/21894.terrain?v=1.31376.0
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14975/21893.terrain?v=1.31376.0
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14975/21892.terrain?v=1.31376.0
-
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14974/21894.terrain?v=1.31376.0
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14974/21893.terrain?v=1.31376.0
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14974/21892.terrain?v=1.31376.0
-
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21894.terrain?v=1.31376.0
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21893.terrain?v=1.31376.0
-https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21892.terrain?v=1.31376.0
-
-*/
-  x = 14973;
-  //y = 21892;
 
   function maketile(x,y,i,j) {
     // ask for geometry
     var p1 = terrainProvider.requestTileGeometry(x+i,y+j,lod);
-    Cesium.when(p1,function(mesh) {
+    Cesium.when(p1,function(tile) {
       var p2 = imageryProvider.requestImage(x+i,y+j,lod);
       Cesium.when(p2,function(image) {
-        meshto3js(scene,mesh,image,i,j);
+        let geometry = meshto3js(tile);
+        var texture = new THREE.Texture( image ); texture.needsUpdate = true; // THREE.ImageUtils.loadTexture('uvmap.jpg')
+        var material = new THREE.MeshPhongMaterial({ map: texture, color: 0xdddddd, wireframe: false });
+        var mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(i*100-100,-j*100+100,-117);
+        scene.add(mesh);
       }).otherwise(function(error) {
         console.log('error occured ', error);
       }); 
@@ -281,12 +266,14 @@ https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21892.terrai
     }); 
   }
 
-  // of course this is horribly wrong, it would be better to request a set of tiles that straddle an area
-  for(i=0;i<3;i++) {
-    for(j=0;j<3;j++) {
+  // of course this is horribly wrong, it would be better to request a set of tiles that straddle an area randomly
+  for(i=-1;i<4;i++) {
+    for(j=-1;j<4;j++) {
       maketile(x,y,i,j);
     }
   }
+
+  // 14-7488-5435.gltf
 
   // what is elevation here?
   var promise = Cesium.sampleTerrain(terrainProvider, 11,[position]);
@@ -298,6 +285,42 @@ https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles/15/14973/21892.terrai
     console.log('error occured ', error);
   }); 
 
+
+  // load a gltf
+  function loadgltf(name,x,y) {
+    var loader = new THREE.GLTFLoader();
+    loader.load(name,function ( gltf ) {
+        console.log("done");
+        console.log(gltf);
+        gltf.scene.scale.set(0.1,0.1,0.1);
+
+        gltf.scene.rotateX(0.6);
+        gltf.scene.rotateY(0.1);
+
+        gltf.scene.position.set(x*100-80,y*100+40,-10);
+
+
+        scene.add( gltf.scene );
+      },
+      function ( xhr ) {  
+        console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+      },
+      function ( error ) {  
+        console.log( 'An error happened' );
+        console.log(error);
+      }
+    );
+  }
+
+    loadgltf("14-7486-5436.gltf",-1,1);
+    loadgltf("14-7486-5437.gltf",-1,0);
+
+    loadgltf("14-7487-5435.gltf",0,2);
+    loadgltf("14-7487-5436.gltf",0,1);
+    loadgltf("14-7487-5437.gltf",0,0);
+
+    loadgltf("14-7488-5435.gltf",1,2);  // I guess that the second value is the latitude tile...
+    loadgltf("14-7488-5436.gltf",1,1);
 
 }
 

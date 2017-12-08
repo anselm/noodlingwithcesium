@@ -1,7 +1,6 @@
 {
   "name": "testbed",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -9,6 +8,18 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "requirejs": "^2.3.5",
+    "three": "^0.88.0",
     "tiny-server": "^1.0.2"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anselm/noodlingwithcesium.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anselm/noodlingwithcesium/issues"
+  },
+  "homepage": "https://github.com/anselm/noodlingwithcesium#readme",
+  "description": ""
 }
