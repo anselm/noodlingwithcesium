@@ -2,24 +2,484 @@
 body { background:#f0e0e0; margin: 0; overflow: hidden; }
 </style>
 
-<script src="node_modules/cesium/Build/CesiumUnminified/Cesium.js"></script>
-<style>
-@import url(node_modules/cesium/Build/CesiumUnminified/Widgets/widgets.css);
-</style>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/88/three.min.js"></script>
 <script src="http://thematicmapping.org/playground/webgl/terrain/lib/TrackballControls.js"></script> 
 <script src="node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
-"
-
-<!-- a slightly customized version of cesium code which returns some more data for us -->
-<!-- not being used right now - I ended up modifying the actual source code inside cesium to expose the data I wanted -->
+<script src="node_modules/cesium/Build/CesiumUnminified/Cesium.js"></script>
 <!-- <script src="createQuantizedMeshTerrainData.js"></script/> -->
 
 <div style="width:640px;height:400px" id="webgl"></div>
-<h1>This is a test</h1>
+
 
 <script>
+
+let tile_size = 100;
+let tile_elevation = -123;
+
+let building_size = 100;
+let building_elevation = 1;
+
+let lat = 30.2645103;
+let lon = -97.7438834;
+let scene = threejs_init();
+
+threejs_decorators(scene);
+
+// terrain tiles can be fetched with this helper
+let terrainProvider = new Cesium.CesiumTerrainProvider({
+  requestVertexNormals : true, 
+  url:"https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles",
+  // url : '//assets.agi.com/stk-terrain/world',
+});
+
+/*
+// unused
+var imageryProvider = Cesium.createTileMapServiceImageryProvider({
+  url : '/node_modules/cesium/Source/Assets/Textures/NaturalEarthII',
+  fileExtension : 'jpg'
+});
+
+// unused
+var imageryProvider = new Cesium.BingMapsImageryProvider({
+  url : 'https://dev.virtualearth.net',
+  key : 'RsYNpiMKfN7KuwZrt8ur~ylV3-qaXdDWiVc2F5NCoFA~AkXwps2-UcRkk2L60K5qBy5kPnTmwvxdfwl532NTheLdFfvYlVJbLnNWG1iC-RGL',
+  mapStyle : Cesium.BingMapsStyle.AERIAL
+});
+*/
+
+// internal tiles for our tests - cesium complains about the tile description xml file although the file is valid
+// something is wrong with the tile quad tree calculation - it has x,y coordinates that are incorrect..
+let imageryProvider = Cesium.createTileMapServiceImageryProvider({
+  url : 'https://beta.cesium.com/api/assets/3470',
+  key : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw',
+  fileExtension : 'png'
+});
+
+
+// HACK - delay for startup -should be a promise
+setTimeout(buildView,1000);
+
+function buildView() {
+  loadImages(imageryProvider,lon,lat,18);
+  loadTiles(terrainProvider,scene,lon,lat,15);
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////
+// 3js support
+//
+// Y+ is north
+// X+ is out from the origin at 0,0 (corresponding to long lat 0,0) off the coast of africa
+// There's a light source above the north pole as well.
+//////////////////////////////////////////////////////////////////////////////////////
+
+function threejs_init() {
+
+  var width  = window.innerWidth;
+  var height = window.innerHeight;
+  var scene = new THREE.Scene();
+
+  // a camera
+  camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 2000);
+  camera.position.set(tile_size*2,0,0);
+
+  // 
+  var renderer = new THREE.WebGLRenderer({alpha:true});
+  renderer.setSize(width, height);
+  //renderer.setClearColor (0xff0000, 1);
+  var controls = new THREE.TrackballControls(camera); 
+  controls.target.set(0,0,0);
+  document.getElementById('webgl').appendChild(renderer.domElement);
+
+  function render() {
+    controls.update();    
+    requestAnimationFrame(render);
+    renderer.render(scene, camera);
+  }
+  render();
+
+  return scene;
+}
+
+function threejs_decorators(scene) {
+
+  var axes = new THREE.AxisHelper(2000000);
+  scene.add(axes);
+
+  // a light
+  var light = new THREE.PointLight( 0xffffff, 1, 1000 );
+  light.position.set(0,tile_size*1.5,0);
+  scene.add( light );
+
+  // a light representation
+  var sgeom = new THREE.SphereGeometry( 5, 32, 32 );
+  var material2 = new THREE.MeshBasicMaterial( {color: 0xffff00} );
+  var sphere = new THREE.Mesh( sgeom, material2 );
+  sphere.position.set(0,tile_size*1.5,0);
+  scene.add( sphere )
+
+
+  {
+    // earth representation - sphere marking one tile size
+    var geometry = new THREE.SphereGeometry( tile_size/2, 32, 32 );
+    var material = new THREE.MeshBasicMaterial( {color: 0xffffff} );
+    material.map    = THREE.ImageUtils.loadTexture('earth.jpg')
+    var sphere = new THREE.Mesh( geometry, material );
+    //sphere.rotateZ(-Math.PI/2);
+    //sphere.rotateX(Math.PI/2);
+    scene.add( sphere );
+  }
+
+  { // green dot marking north pole
+    var geometry = new THREE.SphereGeometry( 1, 32, 32 );
+    var material = new THREE.MeshBasicMaterial( {color: 0x00ff00 } );
+    var sphere = new THREE.Mesh( geometry, material );
+  //  sphere.position.set( ll2vector(lat,lon,tile_size));
+    sphere.position.set( 0, tile_size/2,0 );
+    scene.add( sphere );
+  }
+
+  { // red dot marking austin
+    var geometry = new THREE.SphereGeometry( 3, 32, 32 );
+    var material = new THREE.MeshBasicMaterial( {color: 0xff0000 } );
+    var sphere = new THREE.Mesh( geometry, material );
+
+    //var spherical = new THREE.Spherical(); 
+    //var phi = (90-lat) * Math.PI / 180;
+    //var theta = (270-lon) * Math.PI / 180;
+    //spherical.set( tile_size/2, phi, theta ); 
+    //sphere.position.setFromSpherical( spherical );
+
+    let v = ll2vector(lat,lon,tile_size/2);
+    sphere.position.set(v[0],v[1],v[2]);
+
+
+    // i'd like to transform a feature out to this location by successive transformations
+
+//var vector = new THREE.Vector3( 0, 0, tile_size );
+//var euler = new THREE.Euler(phi, theta, 0, 'XYZ');
+//var quat = new THREE.Quaternion().setFromEuler(euler);
+//vector.applyQuaternion( quat );
+//sphere.position = vector;
+
+    scene.add( sphere );
+  }
+
+  // add a cube
+  //var geometry = new THREE.BoxGeometry( tile_size, tile_size, tile_size );
+  //var material = new THREE.MeshBasicMaterial( {color: 0x00ff00, wireframe: true } );
+  //var cube = new THREE.Mesh( geometry, material );
+  // scene.add( cube );
+
+}
+
+function threejs_tile_to_mesh(t) {
+
+  var geo = new THREE.Geometry();
+  for (var i = 0; i < t._uValues.length; i++) {
+    let x = t._uValues[i];
+    let y = t._vValues[i];
+    let z = ((t._heightValues[i] * (t._maximumHeight - t._minimumHeight))  / 32767.0) + t._minimumHeight;
+
+    x = x*tile_size/32767 - tile_size/2;
+    y = y*tile_size/32767 - tile_size/2;
+    z = 0; //z + tile_elevation;
+
+    var v = new THREE.Vector3(x, y, z);
+    geo.vertices.push(v);
+  }
+  for (var i = 0; i < t._indices.length - 1; i = i + 3) {
+    geo.faces.push(new THREE.Face3(t._indices[i], t._indices[i+1], t._indices[i+2]));
+  }
+  geo.computeFaceNormals();
+
+  // TODO hammer in a uv map for now - improve later
+  let geometry = geo;
+  geometry.computeBoundingBox();
+  let max = geometry.boundingBox.max;
+  let min = geometry.boundingBox.min;
+  let offset = new THREE.Vector2(0 - min.x, 0 - min.y);
+  let range = new THREE.Vector2(max.x - min.x, max.y - min.y);
+  let faces = geometry.faces;
+  geometry.faceVertexUvs[0] = [];
+  for (let i = 0; i < faces.length ; i++) {
+    let v1 = geometry.vertices[faces[i].a]; 
+    let v2 = geometry.vertices[faces[i].b]; 
+    let v3 = geometry.vertices[faces[i].c];
+    geometry.faceVertexUvs[0].push([
+        new THREE.Vector2((v1.x + offset.x)/range.x ,(v1.y + offset.y)/range.y),
+        new THREE.Vector2((v2.x + offset.x)/range.x ,(v2.y + offset.y)/range.y),
+        new THREE.Vector2((v3.x + offset.x)/range.x ,(v3.y + offset.y)/range.y)
+    ]);
+  }
+  geometry.uvsNeedUpdate = true;
+
+  return geo;
+
+}
+
+function ll2vector(lat,lon,r=1) {
+  let phi = (90-lat)*(Math.PI/180)
+  let theta = (lon+180)*(Math.PI/180)
+  x = -r*Math.sin(phi)*Math.cos(theta);
+  z = r*Math.sin(phi)*Math.sin(theta);
+  y = r*Math.cos(phi);
+  return [x,y,z]
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+// image loader
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function loadImages(provider,lon,lat,lod) {
+
+  let images = [];
+
+  // cesium has an abstraction for position that includes elevation
+  let position = Cesium.Cartographic.fromDegrees(lon,lat);
+
+  // each kind of source has its own tiling scheme
+  let scheme = provider.tilingScheme;
+
+  // pluck out the values directly for tile offsets for terrain scheme
+  let xy = scheme.positionToTileXY(position, lod);
+  let x = xy.x;
+  let y = xy.y;
+
+  // TODO broken - the imageryProvider is providing images that are wrong in the y position....
+  // var p2 = imageryProvider.requestImage(x,y,lod);
+  // Cesium.when(p2,finalizetile).otherwise(function(error) {
+  //  console.log('image fetch error occured ', error);
+  //});
+
+  /*
+
+
+
+  I was trying to get you the relevant tiles for the imagery. But Murphy's Law strikes and I no longer have access to the google doc which has the terrain URLs.
+  I scraped a few images after visually cross-referencing the terrain tiles you are working with.
+
+  In the imagery level 18 is the leaf tile so we'll use that as our Z.
+  I believe X will go from 59894-59899 and Y will go from 154200-154210. But you can query a larger extent by increasing the range.
+
+  A sample URL is: https://beta.cesium.com/api/assets/3470/18/59898/154203.png?access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw
+
+  */
+
+
+  function imageFulfill(image) {
+    image.mime = ".png";
+    image.token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw";
+
+    // test build URL for image by hand
+    // TODO would vastly prefer to use an imageprovider!
+    //https://beta.cesium.com/api/assets/3470/18/59898/154203.png?access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw
+    let imageurl = "https://beta.cesium.com/api/assets/3470/"+image.lod+"/"+image.x+"/"+image.y+""+image.mime+"?access_token="+image.token;
+    console.log("=============================================== this is the image url ");
+    console.log(imageurl);
+    let texture = new THREE.TextureLoader().load(imageurl);
+    texture.needsUpdate = true;
+    image.texture = texture;
+  }
+
+  // get some tiles (asynchronous)
+  for(i=-1;i<2;i++) {
+    for(j=-1;j<2;j++) {
+      let image = { scene:scene, lat:lat, lon:lon, lod:lod, x:x, y:y, i:i, j:j, tile_size:tile_size, tile_elevation:tile_elevation };
+      // TODO form my own quad tree mapping that matches the hints provided from the email
+      // go ahead and form the right queries by hand, and also keep track of the absolute extents
+      // may actually render *ALL* the images into a single bitmap that is the size of the total extent...
+      images.push(image);
+      imageFulfill(image);
+    }
+  }
+
+  return images;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+// tile loader
+//////////////////////////////////////////////////////////////////////////////////////
+
+function loadTiles(provider,scene,lon,lat,lod) {
+
+  let tiles = [];
+
+  // cesium has an abstraction for position that includes elevation
+  let position = Cesium.Cartographic.fromDegrees(lon,lat);
+
+  // each kind of source has its own tiling scheme
+  let scheme = provider.tilingScheme;
+
+  // pluck out the values directly for tile offsets for terrain scheme
+  let xy = scheme.positionToTileXY(position, lod);
+  let x = xy.x;
+  let y = xy.y;
+
+  /*
+  // test - what is elevation here?
+  Cesium.when(Cesium.sampleTerrain(terrainProvider, 11,[position]), function(updatedPositions) {
+    console.log("===================elevation is");
+    console.log(position);
+  }).otherwise(function(error) {
+    console.log('error occured ', error);
+  }); 
+  */
+
+  /*
+    // unused test - manually fetch some elevation and render it - this is not used right now
+    // note that for some reason if doing the query by hand that the x,y are different from provided above...
+    let path = 'https://assets.agi.com/stk-terrain/world/'+lod+'/'+x+'/'+y+'.terrain?v=1.16389.0';
+    Cesium.loadArrayBuffer(path).then(function(arrayBuffer) {
+      let t = createQuantizedMeshTerrainData(arrayBuffer, lod, x, y, 0);
+      let geometry = threejs_tile_tomesh(t);
+    }).otherwise(function(error) {
+      console.log('error occured ', error);
+    });
+  */
+
+  // a helper to add to scene
+  function tile2scene(tile) {
+    //let texture = new THREE.Texture( image );
+    tile.texture = new THREE.TextureLoader().load("uvmap.jpg");
+    tile.texture.needsUpdate = true;
+    tile.material = new THREE.MeshPhongMaterial({ map: tile.texture, color: 0xdddddd, wireframe: false });
+    tile.mesh = new THREE.Mesh(tile.geometry, tile.material);
+
+
+    let v = ll2vector(lat,lon,tile_size/2);
+    tile.mesh.position.set(v[0],v[1],v[2]);
+    tile.mesh.lookAt(0,0,0);
+    tile.mesh.rotateY(Math.PI);
+
+    // - i would like to transform it out to the surface
+    // - and then transform by latitude - which means some kind of rotation in two axes
+    // - and then in longitude, which means a rotation in the y axis
+
+
+
+
+    //tile.tile_elevation = 0;
+    //    tile.mesh.quaternion.setFromEuler(
+    //      new THREE.Euler(0, tile.lon * Math.PI / 180.0, tile.lat * Math.PI / 180.0, "YZX")
+    //    );
+
+    //    tile.mesh.quaternion.setFromEuler(
+    //    new THREE.Euler(0,0,tile.lon * Math.PI / 180.0, "XYZ")
+    //);
+
+    //  tile.mesh.scale.set(tile.tile_size/32767,tile.tile_size/32767,1);
+    //  tile.mesh.position.set(tile.i*tile.tile_size-tile.tile_size/2,-tile.j*tile.tile_size-tile.tile_size/2,tile.tile_elevation);
+
+    tile.scene.add(tile.mesh);
+  }
+
+  // a helper to make sure we have a separate variable scope (asynchronous)
+  function tileFulfill(tile) {
+    console.log(tile);
+    Cesium.when(terrainProvider.requestTileGeometry(tile.x,tile.y,tile.lod),function(t) {
+      console.log("============================ have fresh tile at x="+tile.x+" y="+tile.y);
+      console.log(t);
+      tile.t = t;
+      tile.geometry = threejs_tile_to_mesh(t);
+      tile2scene(tile);
+    }).otherwise(function(error) {
+      console.log('error occured ', error);
+    });     
+  }
+
+  // get some tiles (asynchronous)
+  for(i=-1;i<2;i++) {
+    for(j=-1;j<2;j++) {
+
+i = j = 0;
+
+      let tile = { scene:scene, lat:lat,lon:lon,lod:lod, x:x+i, y:y+j, i:i, j:j, tile_size:tile_size, tile_elevation:tile_elevation };
+      // TODO set the longitude latitude extent of these for image mapping
+      tiles.push(tile);
+      tileFulfill(tile);
+      tile.building_size = building_size;
+      tile.building_elevation = building_elevation;
+      buildingFulfill(scene,tile);
+break;
+    }
+break;
+  }
+
+
+  return tiles;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+// building loader
+//////////////////////////////////////////////////////////////////////////////////////
+
+//
+// helper subroutine - load a gltf - https://github.com/AnalyticalGraphicsInc/3d-tiles
+//
+
+var loader = new THREE.GLTFLoader();
+function buildingFulfill(scene,tile) {
+
+tile.y = tile.y + (21893-10874); // TODO WHY DOES CESIUM CHANGE THE TILE Y INDEX INTERNALLY?
+
+  let name = "tiles3d/"+tile.lod+"/"+tile.x+"/"+tile.y+".gltf";
+  console.log("loading " + name);
+  loader.load(name,function ( gltf ) {
+    console.log("===================== loading gltf =========== done");
+    console.log(gltf);
+
+/*
+// forward convert a latitude and longitude to a point on the surface of a sphere in euclidean coordinates
+let phi = (90-tile.lat)*(Math.PI/180);
+let theta = (180+tile.lon)*(Math.PI/180);
+let x = -((radius) * Math.sin(phi)*Math.cos(theta));
+let z = ((radius) * Math.sin(phi)*Math.sin(theta));
+let y = ((radius) * Math.cos(phi));
+let v = THREE.Vector3(x,y,z);
+
+// i guess we want to build a transform matrix for this
+
+
+    // I guess at level "15" that tiles cover a certain amount of units of space ...
+
+    // 
+
+// Apparently buildings are rotated with respect to Austin with respect to the center of the earth and perpendicular to the surface...
+// So maybe a building has a ground plane on the XY axis, with a rotation on the Y axis being equal to the longitude rotation.
+
+gltf.scene.rotateY( (180+tile.lon) * Math.PI / 180 ); 
+
+
+
+//30.2645103;
+//let lon = -97.7438834
+
+
+    // TODO what scale is this data at? Is it ranged over 32767? Doesn't seem to be.
+//    gltf.scene.scale.set(0.1,0.1,0.1);
+
+    // TODO calculate rotation with repect to earth here at this long/lat ... except it doesn't seem to produce good results
+//    gltf.scene.rotateX(0.6);
+//    gltf.scene.rotateY(0.1);
+
+*/
+
+    // place results at a longitude latitude matching the position of this gltf object
+ //   gltf.scene.position.set(i*tile.size,-j*tile.size,0); //tile.building_elevation);
+
+    scene.add( gltf.scene );
+  },
+  function ( xhr ) {  
+    //console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+  },
+  function ( error ) {  
+    console.log( 'An error happened' );
+    console.log(error);
+  });
+}
+
+
 
 // Useful links:
 //
@@ -61,282 +521,7 @@ body { background:#f0e0e0; margin: 0; overflow: hidden; }
 //
 // 
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Convert quantized meshes to 3js.
-// This only works because I modified cesium itself to expose the vertices through the pipeline
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-let mycount = 0;
-
-function meshto3js(t) {
-
-  // I've modified cesium to pipe this data all the way through to me
-  if(!t.xVertices) { t.indices = t._indices; t.xVertices = t.uBuffer; t.yVertices = t.vBuffer; t.hVertices = t.heightBuffer; }
-
-  //var normalMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
-  var hasNormals = t.encodedNormalBuffer && t.encodedNormalBuffer.length == t.xVertices.length * 2;
-  var geo = new THREE.Geometry();
-  for (var i = 0; i < t.xVertices.length; i++) {
-
-    // center each tile at the center of the geometric object
-    let x = (t.xVertices[i]-16383.5) / 327.67;
-    let y = (t.yVertices[i]-16383.5) / 327.67;
-    let z = ((t.hVertices[i] * (t._maximumHeight - t._minimumHeight))  / 32767.0) + t._minimumHeight;
-
-    var v = new THREE.Vector3(x, y, z);
-    geo.vertices.push(v);
-    if (hasNormals) {
-      var normal = new Cesium.Cartesian3(0.0, 0.0, 0.0);
-      Cesium.AttributeCompression.octDecode(t.encodedNormalBuffer[i], t.encodedNormalBuffer[i+1], normal)
-      //Adding normal for this point (right now it's hard coded normal)
-      var threenormal = new THREE.Vector3(normal.x,normal.y,normal.z);
-      var other =new THREE.Vector3(v.x, v.y, v.z);
-      other.add(threenormal);
-      var normal = new THREE.Geometry();
-      normal.vertices.push(v);
-      normal.vertices.push(other);
-    }
-    //var line = new THREE.Line(normal, normalMaterial);
-    //scene.add(line);
-  }
-  for (var i = 0; i < t.indices.length - 1; i = i + 3) {
-    geo.faces.push(new THREE.Face3(t.indices[i], t.indices[i+1], t.indices[i+2]));
-  }
-  geo.computeFaceNormals();
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// a terrible hack to hammer in a uv map for now - improve later
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-let geometry = geo;
-
-geometry.computeBoundingBox();
-
-var max = geometry.boundingBox.max,
-    min = geometry.boundingBox.min;
-var offset = new THREE.Vector2(0 - min.x, 0 - min.y);
-var range = new THREE.Vector2(max.x - min.x, max.y - min.y);
-var faces = geometry.faces;
-
-geometry.faceVertexUvs[0] = [];
-
-for (var i = 0; i < faces.length ; i++) {
-
-    var v1 = geometry.vertices[faces[i].a], 
-        v2 = geometry.vertices[faces[i].b], 
-        v3 = geometry.vertices[faces[i].c];
-
-    geometry.faceVertexUvs[0].push([
-        new THREE.Vector2((v1.x + offset.x)/range.x ,(v1.y + offset.y)/range.y),
-        new THREE.Vector2((v2.x + offset.x)/range.x ,(v2.y + offset.y)/range.y),
-        new THREE.Vector2((v3.x + offset.x)/range.x ,(v3.y + offset.y)/range.y)
-    ]);
-}
-geometry.uvsNeedUpdate = true;
-//////////////////////////////////////////////////
-
-  return geo;
-
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-// make a fairly vanilla 3js scene
-//////////////////////////////////////////////////////////////////////////////////////
-
-function makescene() {
-
-  // some axes art
-  var width  = window.innerWidth;
-  var height = window.innerHeight;
-  var scene = new THREE.Scene();
-  var axes = new THREE.AxisHelper(2000000);
-  scene.add(axes);
-
-  // a camera
-  camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 2000);
-  camera.position.set(0, 0, 200);
-
-  // a light
-  var light = new THREE.PointLight( 0xffffff, 1, 1000 );
-  light.position.set(0,0,100);
-  scene.add( light );
-
-  // a light representation
-  var sgeom = new THREE.SphereGeometry( 5, 32, 32 );
-  var material2 = new THREE.MeshBasicMaterial( {color: 0xffff00} );
-  var sphere = new THREE.Mesh( sgeom, material2 );
-  sphere.position.set(0,0,60);
-  scene.add( sphere )
-
-
-  var renderer = new THREE.WebGLRenderer({alpha:true});
-  renderer.setSize(width, height);
-  //renderer.setClearColor (0xff0000, 1);
-  var controls = new THREE.TrackballControls(camera); 
-  controls.target.set(0,0,0);
-  document.getElementById('webgl').appendChild(renderer.domElement);
-
-  function render() {
-    controls.update();    
-    requestAnimationFrame(render);
-    renderer.render(scene, camera);
-  }
-  render();
-
-  // Construct a terrain provider that uses per vertex normals for lighting to add shading detail to an imagery provider.
-  var terrainProvider = new Cesium.CesiumTerrainProvider({
-    requestVertexNormals : true, 
-    url:"https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles",
-    // url : '//assets.agi.com/stk-terrain/world',
-  });
-
-  /*
-  var imageryProvider = Cesium.createTileMapServiceImageryProvider({
-    url : '/node_modules/cesium/Source/Assets/Textures/NaturalEarthII',
-    fileExtension : 'jpg'
-  });
-  */
-
-  var imageryProvider = new Cesium.BingMapsImageryProvider({
-    url : 'https://dev.virtualearth.net',
-    key : 'RsYNpiMKfN7KuwZrt8ur~ylV3-qaXdDWiVc2F5NCoFA~AkXwps2-UcRkk2L60K5qBy5kPnTmwvxdfwl532NTheLdFfvYlVJbLnNWG1iC-RGL',
-    mapStyle : Cesium.BingMapsStyle.AERIAL
-  });
-
-  // Wait a bit then go and try pull some geometry and render it - this is a hack, it would be better to wait for a promise
-
-  setTimeout(function() { addtiles(terrainProvider,imageryProvider,scene); }, 2000 );
-
-  /*
-  if(0) {
-    // test - manually fetch some elevation and render it - this is not used right now
-    let path = 'https://assets.agi.com/stk-terrain/world/'+lod+'/'+x+'/'+y+'.terrain?v=1.16389.0';
-    Cesium.loadArrayBuffer(path).then(function(arrayBuffer) {
-      console.log("=================");
-      console.log("elevation data is loaded now rendering");
-      var t = createQuantizedMeshTerrainData(arrayBuffer, lod, x, y, 0);
-      meshto3js(scene,t);
-    }).otherwise(function(error) {
-      console.log('error occured ', error);
-    });
-  }*/
-
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// call the terrain provider as needed to fetch tiles and then paint them myself in 3js
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-function addtiles(terrainProvider,imageryProvider,scene) {
-
-  lod = 15;
-  y = 0;
-  x = 0;
-
-  // mt hood
-  // var position = Cesium.Cartographic.fromDegrees(-121.6960,45.3736);
-  // grand canyon
-  //var position = Cesium.Cartographic.fromDegrees(-112.1401,36.0544);
-  // austin
-  var position = Cesium.Cartographic.fromDegrees(-97.7438834,30.2645103);
-
-  // get tile
-  var tilingScheme = terrainProvider.tilingScheme;
-  var xy = tilingScheme.positionToTileXY(position, lod);
-  x = xy.x;
-  y = xy.y;
-
-  function maketile(x,y,i,j) {
-    // ask for geometry
-    var p1 = terrainProvider.requestTileGeometry(x+i,y+j,lod);
-    Cesium.when(p1,function(tile) {
-      var p2 = imageryProvider.requestImage(x+i,y+j,lod);
-      Cesium.when(p2,function(image) {
-        let geometry = meshto3js(tile);
-        var texture = new THREE.Texture( image ); texture.needsUpdate = true; // THREE.ImageUtils.loadTexture('uvmap.jpg')
-        var material = new THREE.MeshPhongMaterial({ map: texture, color: 0xdddddd, wireframe: false });
-        var mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(i*100-100,-j*100+100,-117);
-        scene.add(mesh);
-      }).otherwise(function(error) {
-        console.log('error occured ', error);
-      }); 
-    }).otherwise(function(error) {
-      console.log('error occured ', error);
-    }); 
-  }
-
-  // of course this is horribly wrong, it would be better to request a set of tiles that straddle an area randomly
-  for(i=-1;i<4;i++) {
-    for(j=-1;j<4;j++) {
-      maketile(x,y,i,j);
-    }
-  }
-
-  // 14-7488-5435.gltf
-
-  // what is elevation here?
-  var promise = Cesium.sampleTerrain(terrainProvider, 11,[position]);
-  Cesium.when(promise, function(updatedPositions) {
-    console.log("===================positions updated");
-    console.log(position);
-    console.log(updatedPositions);
-  }).otherwise(function(error) {
-    console.log('error occured ', error);
-  }); 
-
-
-  // load a gltf
-  function loadgltf(name,x,y) {
-    var loader = new THREE.GLTFLoader();
-    loader.load(name,function ( gltf ) {
-        console.log("done");
-        console.log(gltf);
-        gltf.scene.scale.set(0.1,0.1,0.1);
-
-        gltf.scene.rotateX(0.6);
-        gltf.scene.rotateY(0.1);
-
-        gltf.scene.position.set(x*100-80,y*100+40,-10);
-
-
-        scene.add( gltf.scene );
-      },
-      function ( xhr ) {  
-        console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
-      },
-      function ( error ) {  
-        console.log( 'An error happened' );
-        console.log(error);
-      }
-    );
-  }
-
-    loadgltf("14-7486-5436.gltf",-1,1);
-    loadgltf("14-7486-5437.gltf",-1,0);
-
-    loadgltf("14-7487-5435.gltf",0,2);
-    loadgltf("14-7487-5436.gltf",0,1);
-    loadgltf("14-7487-5437.gltf",0,0);
-
-    loadgltf("14-7488-5435.gltf",1,2);  // I guess that the second value is the latitude tile...
-    loadgltf("14-7488-5436.gltf",1,1);
-
-}
-
-
-// go!
-makescene();
-
-/*
-
-    var viewer = new Cesium.Viewer('webgl');
-
-var terrainProvider = new Cesium.CesiumTerrainProvider({
-    url : '//assets.agi.com/stk-terrain/world'
-});
-viewer.terrainProvider = terrainProvider;
-*/
 
 </script>
 
