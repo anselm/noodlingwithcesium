@@ -22,7 +22,7 @@ let USE_RAW_LOAD = false; // load the buffer myself and don't bother with terrai
 let USE_TILE_SCHEME = false; // if the network is slow this cannot be used either
 let USE_IMAGE_SCHEME = false; // the image scheme seems broken or different from raw queries
 let USE_LARGE_CANVAS = true; // paint all images to a single surface before GPU
-let USE_DELAY = 1000; // if the network is slow then wait longer for server to catch up
+let USE_DELAY = 3000; // if the network is slow then wait longer for server to catch up
 
 let USE_TILE_LONGLAT = false; // rotate tile to the right place on the planets sureface - this is generally useless unless you want to write a 3d globe
 
@@ -184,13 +184,12 @@ function threejs_tile_to_mesh(t,tile_size,tile_elevation) {
   }
   geo.computeFaceNormals(); 
 
-  // TODO hammer in a uv map for now - improve later
-  let geometry = geo;
-  geometry.computeBoundingBox();
-  let max = geometry.boundingBox.max;
-  let min = geometry.boundingBox.min;
-  let offset = new THREE.Vector2(0 - min.x, 0 - min.y);
-  let range = new THREE.Vector2(max.x - min.x, max.y - min.y);
+  return geo;
+
+}
+
+function threejs_recomputeuv(geometry,x,y,scale) {
+  // express x and y in vertex space, ie, if a tile ranges from 0 to 100 and the total scale is 400 then x,y could say be 0, 100,200 or 300
   let faces = geometry.faces;
   geometry.faceVertexUvs[0] = [];
   for (let i = 0; i < faces.length ; i++) {
@@ -198,17 +197,13 @@ function threejs_tile_to_mesh(t,tile_size,tile_elevation) {
     let v2 = geometry.vertices[faces[i].b]; 
     let v3 = geometry.vertices[faces[i].c];
     geometry.faceVertexUvs[0].push([
-        new THREE.Vector2((v1.x + offset.x)/range.x ,(v1.y + offset.y)/range.y),
-        new THREE.Vector2((v2.x + offset.x)/range.x ,(v2.y + offset.y)/range.y),
-        new THREE.Vector2((v3.x + offset.x)/range.x ,(v3.y + offset.y)/range.y)
+        new THREE.Vector2((v1.x + x)/scale ,(v1.y + y)/scale),
+        new THREE.Vector2((v2.x + x)/scale ,(v2.y + y)/scale),
+        new THREE.Vector2((v3.x + x)/scale ,(v3.y + y)/scale)
     ]);
   }
   geometry.uvsNeedUpdate = true;
-
-  return geo;
-
 }
-
 
 function threejs_printkids(parent,depth=0) {
   console.log("========================== " + depth);
@@ -370,8 +365,8 @@ function loadImages(scene,provider,lon,lat,lod) {
     if(USE_LARGE_CANVAS) {
       tile.image = new Image();
       tile.image.onload = function(results) {
-        console.log("================ got image");
-        console.log(imageurl);
+        //console.log("================ got image");
+        //console.log(imageurl);
         addToCanvas(tile);
       };
       tile.image.src = imageurl;
@@ -429,7 +424,8 @@ function loadTiles(provider,scene,lon,lat,lod,tile_size,tile_elevation,building_
 
   // a helper to add to scene
   function tile2scene(tile) {
-    tile.geometry = threejs_tile_to_mesh(tile.t,tile.tile_size,tile.u,tile.v,tile.uvrange);
+    tile.geometry = threejs_tile_to_mesh(tile.t,tile.tile_size);
+    threejs_recomputeuv(tile.geometry,tile.u,tile.v,tile.uvrange);
     tile.mesh = new THREE.Mesh(tile.geometry, canvas_material);
     if(USE_TILE_LONGLAT) {
       // hack - let's see it on the right place on earth; it would be more elegant to transform and rotate this without a lookat
@@ -488,7 +484,12 @@ function loadTiles(provider,scene,lon,lat,lod,tile_size,tile_elevation,building_
   // get some tiles (asynchronous)
   for(i=0;i<4;i++) {
     for(j=0;j<4;j++) {
-      let tile = { scene:scene, u:i, v:j, uvrange:4, lat:lat,lon:lon,lod:lod, x:x+i, y:y+j, i:(i-2), j:(j-2), tile_size:tile_size, tile_elevation:tile_elevation };
+      let tile = { scene:scene,
+                   u:i*tile_size, v:(3-j)*tile_size, uvrange:tile_size*4,
+                   lat:lat,lon:lon,lod:lod, x:x+i, y:y+j, i:(i-2), j:(j-2),
+                   tile_size:tile_size,
+                   tile_elevation:tile_elevation
+                 };
       tiles.push(tile);
       tileFulfill(tile);
       tile.building_size = building_size;
