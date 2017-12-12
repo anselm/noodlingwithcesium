@@ -3,10 +3,10 @@
 # just get a pile of tiles around this area
 
 lod=18
-x=59890
-x2=59910
-y=154190
-y2=154210
+x=59886
+x2=59902
+y=154208
+y2=154224
 
 
 for j in `seq $x $x2`;

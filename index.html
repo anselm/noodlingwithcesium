@@ -194,9 +194,9 @@ function threejs_recomputeuv(geometry,x,y,scale) {
     let v2 = geometry.vertices[faces[i].b]; 
     let v3 = geometry.vertices[faces[i].c];
     geometry.faceVertexUvs[0].push([
-        new THREE.Vector2(1-((v1.y + y)/scale),1-(v1.x + x)/scale ),
-        new THREE.Vector2(1-((v2.y + y)/scale),1-(v2.x + x)/scale ),
-        new THREE.Vector2(1-((v3.y + y)/scale),1-(v3.x + x)/scale )
+        new THREE.Vector2((v1.x + x)/scale, ((v1.y + y)/scale) ),
+        new THREE.Vector2((v2.x + x)/scale, ((v2.y + y)/scale) ),
+        new THREE.Vector2((v3.x + x)/scale, ((v3.y + y)/scale) )
     ]);
   }
   geometry.uvsNeedUpdate = true;
@@ -324,7 +324,7 @@ function loadImages(scene,provider,lon,lat,lod) {
   } else {
     // because the end point cannot respond quickly enough I've bypassed it and memoized it for my testing
     position = { height: 0, latitude: 0.5282153512387369, longitude: -1.7059525890154297 };
-    xy = { x: 59890, y: 154190 };
+    xy = { x: 59886, y: 154208 };
   }
 
   let x = xy.x;
