@@ -10,11 +10,6 @@ body { background:#f0e0e0; }
 
 <div style="width:800;height:800px" id="webgl"></div>
 
-<h1>hello</h1>
-<canvas id="canvastexture" height="4096" width="4096"></canvas>
-<canvas id="canvastexture2" height="1024" width="1024"></canvas>
-<h1>good</h1>
-
 <script>
 
 let USE_FAKE_TILES = false; // if the network is slow it is easier to just have a fake tile
@@ -23,6 +18,7 @@ let USE_TILE_SCHEME = false; // if the network is slow this cannot be used eithe
 let USE_IMAGE_SCHEME = false; // the image scheme seems broken or different from raw queries
 let USE_LARGE_CANVAS = true; // paint all images to a single surface before GPU
 let USE_DELAY = 3000; // if the network is slow then wait longer for server to catch up
+let SHOW_EARTH = 0;
 
 let USE_TILE_LONGLAT = false; // rotate tile to the right place on the planets sureface - this is generally useless unless you want to write a 3d globe
 
@@ -132,6 +128,7 @@ function threejs_decorators(scene,lat,lon,tile_size) {
     scene.add( sphere )
   }
 
+if(!SHOW_EARTH) return;
 
   {
     // earth representation - sphere marking one tile size
@@ -172,8 +169,8 @@ function threejs_tile_to_mesh(t,tile_size,tile_elevation) {
     let y = t._vValues[i];
     let z = ((t._heightValues[i] * (t._maximumHeight - t._minimumHeight))  / 32767.0) + t._minimumHeight;
 
-    x = x*tile_size/32767 - tile_size/2;
-    y = y*tile_size/32767 - tile_size/2;
+    x = x*tile_size/32767;
+    y = y*tile_size/32767;
     z = z - 115; // + tile_elevation;
 
     var v = new THREE.Vector3(x, y, z);
@@ -224,15 +221,16 @@ let canvas2 = 0;
 let ctx = 0;
 let ctx2 = 0;
 let canvas_material = 0;
+let canvas_size = 4096;
 
 function setupCanvas() {
   if(canvas) return;
 
-  if(0) {
+  if(1) {
     canvas = document.createElement('canvas');
     canvas.id = "canvas";
-    canvas.width = 1024;
-    canvas.height = 1024;
+    canvas.width = canvas_size;
+    canvas.height = canvas_size;
     canvas.style.position = "absolute";
     canvas.style.left = 0;
     canvas.style.top = 0;
@@ -240,16 +238,15 @@ function setupCanvas() {
     //$("#canvas")[0].appendChild(canvas);
   } else {
     canvas = document.getElementById( 'canvastexture' );
-    canvas2 = document.getElementById( 'canvastexture' );
   }
 
   // clear canvas
   ctx = canvas.getContext("2d");
-  ctx2 = canvas.getContext("2d");
+  //ctx2 = canvas.getContext("2d");
   ctx.fillStyle = "#ff0000";
   ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx2.fillStyle = "#ff00ff";
-  ctx2.fillRect(0,0,canvas.width,canvas.height);
+  //ctx2.fillStyle = "#ff00ff";
+  //ctx2.fillRect(0,0,canvas.width,canvas.height);
   // test content
   ctx.textAlign = "left";
   ctx.fillStyle = "#000000";
@@ -495,7 +492,10 @@ function loadTiles(provider,scene,lon,lat,lod,tile_size,tile_elevation,building_
       tile.building_size = building_size;
       tile.building_elevation = building_elevation;
       buildingFulfill(scene,tile);
+
+
     }
+
   }
 
   return tiles;
@@ -533,7 +533,7 @@ console.error("Cesium uses some kind of different tiling scheme computation than
     console.log("so we believe that to get to the same scale as terrain we need this value " + block_scale);
 
     gltf.scene.scale.set(block_scale,block_scale,block_scale);
-    gltf.scene.position.set(tile.i*tile.tile_size, tile.j*tile.tile_size, tile.building_elevation);
+    gltf.scene.position.set(tile.i*tile.tile_size+tile.tile_size/2, tile.j*tile.tile_size+tile.tile_size/2, tile.building_elevation);
     scene.add( gltf.scene );
   },
   function ( xhr ) {  
