@@ -1,0 +1,16 @@
+[
+   {
+     uri:"3000",
+     script:"lifecards.script"
+     children:["3001"],
+   },
+
+   {
+     uri:"3001",
+     title:"Favorite Foods",
+     children:["3002"],
+   },
+
+ 
+]
+

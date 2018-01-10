@@ -1,0 +1,37 @@
+<html>
+<head>
+<script src="js/aframe.min.js"></script>
+<script src="js/aframe-orbit-controls-component.min.js"></script>
+<script src="js/ThreeCSG.js"></script>
+<script src="js/aframe_jsonloader.js"></script>
+<script src="js/aframe_csgbuilding.js"></script>
+<script src="https://rawgit.com/feiss/aframe-environment-component/master/dist/aframe-environment-component.min.js"></script>
+</head>
+<body>
+
+<a-scene id="a-scene">
+
+<a-assets>
+<img id="sky" src="sky.jpg">
+<a-asset-item id="tree-obj" src="data/tree.obj"></a-asset-item>
+<a-asset-item id="tree-mtl" src="data/tree.mtl"></a-asset-item>
+</a-assets>
+
+<a-entity jsonloader id="target" url="data/sample.json">
+</a-entity>
+
+<a-entity
+ id="camera"
+ camera="fov: 80; zoom: 1;"
+ position="0 2 5"
+ orbit-controls=" autoRotate: false; target: #target; enableDamping: true; dampingFactor: 0.125; rotateSpeed:0.25; minDistance:3; maxDistance:100;"
+ mouse-cursor="">
+</a-entity>
+
+<a-sky src="#sky"/>
+
+</a-scene>
+</body>
+</html>
+
+

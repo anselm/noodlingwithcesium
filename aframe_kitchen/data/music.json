@@ -1,0 +1,11 @@
+[
+   {
+     uri:"3002",
+     title:"BlueBerries",
+     features:"fiber, nutrients etc",
+     geometry:"url to geometry",
+     schema:"lifecards.schema",
+   },
+ 
+]
+
