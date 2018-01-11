@@ -1,4 +1,4 @@
 node_modules
-tile_images
-tiles3d
+tile_images/**
+tiles3d/**
 
