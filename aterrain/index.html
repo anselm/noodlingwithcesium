@@ -23,12 +23,37 @@ body { background:#f0e0e0; overflow:hidden;}
 <a-camera id="camera"></a-camera>
 </a-entity>
 
-<a-entity a-terrain></a-entity>
+<a-entity a-terrain="lat:30.2645103; lon:-97.7438834; lod:15, elevation:100">
+
+ <a-entity a-ll="lat:30.2627465; lon:-97.7422729; lod:15; elevation:120" scale="10 1000 10">
+  <a-entity obj-model="obj: #tree-obj; mtl: #tree-mtl"></a-entity>
+ </a-entity>
+
+ <a-entity a-ll="lat:30.2645103; lon:-97.7438834; lod:15; elevation:120" scale="10 100 10">
+  <a-entity obj-model="obj: #tree-obj; mtl: #tree-mtl"></a-entity>
+ </a-entity>
+
+ <a-entity a-ll="lat:30.2582738; lon:-97.7457563; lod:15; elevation:120" scale="10 1000 10">
+  <a-entity obj-model="obj: #tree-obj; mtl: #tree-mtl"></a-entity>
+ </a-entity>
+
+ <a-entity a-ll="lat:30.2605014; lon:-97.7437918; lod:15; elevation:120" scale="10 1000 10">
+  <a-entity obj-model="obj: #tree-obj; mtl: #tree-mtl"></a-entity>
+ </a-entity>
+
+
+ <a-entity a-ll="lat:45.5577397; lon:-122.6737271; lod:15; elevation:120" scale="10 1000 10">
+  <a-entity obj-model="obj: #tree-obj; mtl: #tree-mtl"></a-entity>
+ </a-entity>
+
+</a-entity>
 
 <!-- where am i? -->
-<a-box position="0 0 0"  color="#000000"></a-box>
 <a-box position="10 0 0" color="#ff0000"></a-box>
 <a-box position="0 10 0" color="#00ff00"></a-box>
 <a-box position="0 0 -10" color="#0000ff"></a-box>
+
+<a-gltf-model src="duck.glb"></a-gltf-model>  
+
 
 </a-scene>

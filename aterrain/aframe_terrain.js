@@ -175,9 +175,9 @@ Cesium.terrainProvider = new Cesium.CesiumTerrainProvider({
 
 AFRAME.registerComponent('a-tile', {
   schema: {
-    x: {type: 'number', default: 14000},
-    y: {type: 'number', default: 10000},
-    lod: {type: 'number', default: 15},
+      x: {type: 'number', default: 0},
+      y: {type: 'number', default: 0},
+    lod: {type: 'number', default: 0},
   },
   init: function () {
     let scope = this;
@@ -210,9 +210,34 @@ AFRAME.registerComponent('a-tile', {
     this.material = new THREE.MeshPhongMaterial( {color: '#AAA'} );
     this.mesh = new THREE.Mesh(geometry,this.material); //, canvas_material);
     this.el.setObject3D('mesh', this.mesh);
-    this.el.setAttribute('position',{x:x*size,y:0,z:y*size});
+    this.el.setAttribute('position',{x:x*size,y:0,z:y*size+size}); // slight hack here - since the geometry was rotated the position is one tile off
   },
 
+});
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// aframe long lat feature
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+AFRAME.registerComponent('a-ll', {
+  schema: {
+    lat: {type: 'number', default: 0},
+    lon: {type: 'number', default: 0},
+    lod: {type: 'number', default: 0},
+    elevation: {type: 'number', default: 0},
+  },
+  init: function() {
+    let lon = this.data.lon;
+    let lat = this.data.lat;
+    let lod = this.data.lod;
+    let elevation = this.data.elevation;
+    let schema = tile_xy(lon,lat,lod);
+    let size = schema.meters_wide;
+    let x = schema.x*size;
+    let y = schema.y*size;
+    console.log(" x="+x+" y="+y+" elevation="+elevation);
+    this.el.setAttribute('position',{x:x,y:elevation,z:y});
+  },
 });
 
 
@@ -223,17 +248,16 @@ AFRAME.registerComponent('a-tile', {
 AFRAME.registerComponent('a-terrain', {
 
   schema: {
-    lat: {type: 'number', default: 30.2645103},
-    lon: {type: 'number', default: -97.7438834},
-    lod: {type: 'number', default: 15},
-    elevation: {type: 'number', default: 15},
-    // these fields are re-generated
-    stride: {type: 'number', default: 0.001},
+    lat: {type: 'number', default: 0},
+    lon: {type: 'number', default: 0},
+    lod: {type: 'number', default: 0},
+    elevation: {type: 'number', default: 100},
   },
 
   init: function() {
     this.getLocation();
     this.getUserInput();
+    this.updateCenter(this.data);
   },
 
   updateCenter: function(data) {
@@ -241,24 +265,22 @@ AFRAME.registerComponent('a-terrain', {
     let lon = data.lon;
     let lat = data.lat;
     let lod = data.lod;
+    let elevation = data.elevation;
     Cesium.when(Cesium.terrainProvider.readyPromise).then(function() {
       try {
         let pointOfInterest = Cesium.Cartographic.fromDegrees(lon,lat);
-        // where is the ground at this point?
         Cesium.sampleTerrain(Cesium.terrainProvider, lod,[pointOfInterest]).then(function(results) {
-          let ground = results[0].height;
-          let size = tile_extent(lod).meters_wide;
-          let hotairballoon = 20;
-          // offset all the tiles such that the latitude and longitude are at 0,0,0
+          // get elevation
+          let ground = scope.data.ground = results[0].height;
           // let xy = Cesium.terrainProvider.tilingScheme.positionToTileXY(pointOfInterest,lod);
           let x = Cesium.terrainProvider.tilingScheme.getNumberOfXTilesAtLevel(lod) * (180+lon) / 360;
           let y = Cesium.terrainProvider.tilingScheme.getNumberOfYTilesAtLevel(lod) * ( 90-lat) / 180;
-          let f = Math.floor(y); // TODO hack - the fractional component is going in the wrong direction ... fix later
-          scope.el.setAttribute('position',{x:-x*size,y:-ground-hotairballoon,z:-f*size+(y-f)*size});
+          let schema = tile_xy(lon,lat,lod); // this effectiely does the above also...
+          let size = schema.meters_wide;
+          scope.el.setAttribute('position',{x:-x*size,y:-ground-elevation,z:-y*size});
+          console.log("ground is at "+scope.data.ground);
         });
-      } catch(e) {
-        alert(e);
-      }
+      } catch(e) {};
     });
 
   },
@@ -283,15 +305,12 @@ AFRAME.registerComponent('a-terrain', {
           element.setAttribute('a-tile',{x:xy.x,y:xy.y,lod:lod});
           scope.el.appendChild(element);
         }
-      } catch(e) {
-        alert(e);
-      }
+      } catch(e) {};
     });
 
   },
 
   getLocation: function() {
-    return;
     if(!navigator.geolocation) return;
     let scope = this;
     navigator.geolocation.getCurrentPosition(function(results) {
@@ -306,23 +325,15 @@ AFRAME.registerComponent('a-terrain', {
 
   getUserInput: function() {
     let scope = this;
-
-    var pos = document.querySelector('#camera').getAttribute('position');
-    var rot = document.querySelector('#camera').getAttribute('rotation');
-    console.log(rot.y + " " + rot.x + " " + rot.z);
-    // should probably use camera to feed the navigation system...
-
     window.addEventListener("keydown", function(e) {
-      switch(e.keyCode) {
-        case 74: scope.data.lon -= scope.data.stride; break; //left k
-        case 73: scope.data.lat += scope.data.stride; break; //up i
-        case 75: scope.data.lon += scope.data.stride; break; //right k
-        case 77: scope.data.lat -= scope.data.stride; break; //down m
-        //case 37: scope.data.lon -= scope.data.stride; break; //left
-        //case 38: scope.data.lat += scope.data.stride; break; //up
-        //case 39: scope.data.lon += scope.data.stride; break; //right
-        //case 40: scope.data.lat -= scope.data.stride; break; //down
+      let angle = document.querySelector('#camera').getAttribute('rotation').y;
+      let stride = 0.001;// TODO FIX
+      if(e.keyCode == 32) {
+        scope.data.lon -= Math.sin(angle*Math.PI/180) * stride;
+        scope.data.lat += Math.cos(angle*Math.PI/180) * stride;
       }
+      if(e.keyCode == 74) scope.data.elevation -= 10;
+      if(e.keyCode == 75) scope.data.elevation += 10;
       scope.updateTiles(scope.data);
       scope.updateCenter(scope.data);
     });
@@ -333,26 +344,35 @@ AFRAME.registerComponent('a-terrain', {
 
 /*
 
-moving around
-  - get the camera orientation on the y axis
-  - changes
+Right now the engine fetches a map tile at your location... and as you move it fetches more tiles.
 
-todo picky details around positioning
+todo nav
 
-  - fractional component of center is backwards... examine
+  - add a flyover mode and a street mode
 
-  - use camera heading to estimate new longitude and latitude to move by
+  - in flyover mode have the camera pointing down at the earth and fetch all the tiles around the camera view
 
-  - use current lod to estimate stride
+    may need to deal with zooming away from the ground - switching to a different set of tiles
 
-  - may have to do ground intersection tests to be precisely on the ground; examine; need to carefully validate current lat lon coordinates
-    drop some objects on terrain and validate against objective data
+    support press and drag to move, and two finger to zoom (or at least the former of no zoom)
 
-next
+  - in street mode use current walking controls as is pretty much
 
-  - turn buildings back on
-  - turn terrain back on
-  - 
+todo other
+
+  - there is a delay moving due to tile load
+  - add buildings
+  - add images
+  - compute stride 
+
+for multiplayer
+
+  - have some kind of small server that logs players and can return recently active players
+  - can probably write a test of this on the client as well
+  - let me drop some things by hitting a key
+  - give me some kind of avatar or center point
+  - make sure stuff is on top of ground
+
 
 */
 
