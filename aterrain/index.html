@@ -36,13 +36,11 @@ registerAframeClickDragComponent(window.AFRAME);
 <a-box position="0 0 -10" color="#0000ff"></a-box>
 
 <!-- a piece of terrain -->
-<a-entity a-terrain="lat:30.2645103; lon:-97.7438834; lod:15, elevation:100">
-</a-entity>
+<a-entity a-terrain="lat:30.2645103; lon:-97.7438834; lod:15, elevation:100"></a-entity>
 
-<a-entity a-building=""></a-entity>
-
-<a-entity id='cameraWrapper' position="0 0 0">
-<a-camera id="camera" look-controls universal-controls ></a-camera>
+<!-- a camera; controls make it ignore the y position so it is wrapped -->
+<a-entity id='cameraWrapper' position="0 -1.6 0">
+<a-camera id="camera" position="0 0 0" look-controls universal-controls ></a-camera>
 </a-entity>
 
 </a-scene>
