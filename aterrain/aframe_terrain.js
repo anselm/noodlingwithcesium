@@ -69,215 +69,220 @@ var FlatLandBing = {
 
 */
 
-// https://cesium.com/blog/2015/08/10/introducing-3d-tiles/
-// http://blog.mastermaps.com/2014/10/3d-terrains-with-cesium.html
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// test images
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-function ll2vector(lat,lon,r=1) {
-  let phi = (90-lat)*(Math.PI/180)
-  let theta = (lon+180)*(Math.PI/180)
-  x = -r*Math.sin(phi)*Math.cos(theta);
-  z = r*Math.sin(phi)*Math.sin(theta);
-  y = r*Math.cos(phi);
-  return [x,y,z]
-}
-
-function tile_extent(lod) {
-  let scheme = {};
-  scheme.lod = lod;
-  scheme.w = Math.pow(2,lod+1);
-  scheme.h = Math.pow(2,lod);
-  scheme.ntiles = scheme.w*scheme.h;
-  scheme.wdeg = 360 / scheme.w;
-  scheme.hdeg = 180 / scheme.h;
-  scheme.meters_wide = 40070000 / scheme.w;
-  scheme.meters_tall = 39000000 / scheme.h; // TODO this may be wrong
-  return scheme;
-}
-
-function tile_lonlat(x,y,lod) {
-  let scheme = tile_extent(lod);
-  scheme.x = x;
-  scheme.y = y;
-  scheme.lon = 360 * x / scheme.w;
-  scheme.lat = 180 * y / scheme.h; // TODO verify
-  return scheme;
-}
-
-function tile_xy(lon,lat,lod) {
-  let scheme = tile_extent(lod);
-  scheme.lon = lon;
-  scheme.lat = lat;
-  scheme.x = (180+lon) * scheme.w / 360;
-  scheme.y = ( 90-lat) * scheme.h / 180;
-  return scheme;
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-// test code - an image loader
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-let canvas = 0;
-let canvas2 = 0;
-let ctx = 0;
-let ctx2 = 0;
-let canvas_material = 0;
-let canvas_size = 4096;
-
-function setupCanvas() {
-  if(canvas) return;
-
-  if(1) {
-    canvas = document.createElement('canvas');
-    canvas.id = "canvas";
-    canvas.width = canvas_size;
-    canvas.height = canvas_size;
-    canvas.style.position = "absolute";
-    canvas.style.left = 0;
-    canvas.style.top = 0;
-    canvas.style.zIndex = -1;
-    //$("#canvas")[0].appendChild(canvas);
-  } else {
-    canvas = document.getElementById( 'canvastexture' );
+class ImageServer {
+  constructor() {
+    Cesium.imageProvider = new Cesium.BingMapsImageryProvider({
+        url : 'https://dev.virtualearth.net',
+        key : 'RsYNpiMKfN7KuwZrt8ur~ylV3-qaXdDWiVc2F5NCoFA~AkXwps2-UcRkk2L60K5qBy5kPnTmwvxdfwl532NTheLdFfvYlVJbLnNWG1iC-RGL',
+        mapStyle : Cesium.BingMapsStyle.AERIAL
+    });
   }
-
-  // clear canvas
-  ctx = canvas.getContext("2d");
-  //ctx2 = canvas.getContext("2d");
-  ctx.fillStyle = "#ff0000";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  //ctx2.fillStyle = "#ff00ff";
-  //ctx2.fillRect(0,0,canvas.width,canvas.height);
-  // test content
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#000000";
-  ctx.font = "90px Arial";
-  //ctx.fillText("hello",100,100);
-
-  // trying to directly reference it from three js - fails due to a bug
-  canvas_material = new THREE.MeshPhongMaterial( { color:0xffffff, wireframe:false });
-  canvas_material.map = new THREE.Texture( canvas );
-  canvas_material.map.needsUpdate = true;
-
-  // older approaches to building textures
-  //let texture = new THREE.TextureLoader().load(imageurl);
-  //texture.needsUpdate = true;
-  //tile.imageurl = imageurl;
-  //tile.texture = texture;
-  //let texture = new THREE.Texture( image );
-  //let texture = new THREE.TextureLoader().load("uvmap.jpg");
-  //let texture.needsUpdate = true;
-  //tile.material = new THREE.MeshPhongMaterial({ map: tile.texture, color: 0xdddddd, wireframe: false });
-
-}
-
-function addToCanvas(tile) {
-
-  // we want to paint everything to a single large canvas and use that as a source for the uv data
-
-  // attempt #1 : this unfortunately changes the texture filter inside of webgl and corrupts the canvas so we can not export it to threejs direclty anymore
-  //ctx.drawImage(tile.image,0,0,256,256);
-  //canvas_material.map.needsUpdate = true;
-
-  // attempt #2 : this doesn't work because "the operation is insecure"
-  //let data = canvas.toDataURL("image/png");
-  //var myimage = document.createElement('img');
-  //myimage.onload = function(results) {
-  //  console.log("=================hack loaded");
-  //  canvas_material.map = new THREE.Texture(myimage);
-  //  canvas_material.map.needsUpdate = true;
-  //}
-  //myimage.src = data;
-
-  // attempt #3: get at the raw data as another way and then back convert it...  it says "the operation is insecure"
-  ctx.drawImage(tile.image,tile.i*256,tile.j*256,256,256);
-  //let data = ctx2.getImageData(0,0,1024,1024);
-  //ctx.putImageData(data,0,0);
-
-  return;
-
-  // test converting it to a blob and then reloading it
-  //var texture = new THREE.Texture();
-  //var imageBlob = new Blob([byteArray.buffer], {type: "image/png"});
-  //createImageBitmap(imageBlob).then(function(imageBitmap) {
-  //    texture.image = imageBitmap;
-  //    texture.needsUpdate = true;
-  //});
-
-
-}
-
-function loadImages(scene,provider,lon,lat,lod) {
-
-  let images = [];
-  let position = 0;
-  let xy = 0;
-
-  console.error("why does the image scheme differ from raw queries - use hardcoded for now?");
-  if(true) {
-    position = Cesium.Cartographic.fromDegrees(lon,lat);
-    xy = provider.tilingScheme.positionToTileXY(position, lod);
-  } else {
-    // because the end point cannot respond quickly enough I've bypassed it and memoized it for my testing
-    position = { height: 0, latitude: 0.5282153512387369, longitude: -1.7059525890154297 };
-    xy = { x: 59886, y: 154208 };
+  ready(callback) {
+    Cesium.when(Cesium.imageProvider.readyPromise).then(callback);
   }
-
-  let x = xy.x;
-  let y = xy.y;
-
-  console.log("====================== image scheme");
-  console.log(position);
-  console.log(xy);
-
+  metersWide(lod) {
+    // https://msdn.microsoft.com/en-us/library/bb259689.aspx
+    let EarthRadius = 6378137;
+    let EarthCircumference = 40054700.36; // 2*Math.PI*EarthRadius;
+    let tilesWide = 2 << lod;
+    console.log(tilesWide);
+    return EarthCircumference/tilesWide;
+  }
+  groundResolution(latitude, levelOfDetail) {
+    let EarthRadius = 6378137;
+    let EarthCircumference = 40054700.36; // 2*Math.PI*EarthRadius;
+    let mapSize = 256 << levelOfDetail;
+    return Math.cos(latitude * Math.PI / 180) * EarthCircumference / mapSize;
+  }
   /*
-  I believe X will go from 59894-59899 and Y will go from 154200-154210.
-  A sample URL is: https://beta.cesium.com/api/assets/3470/18/59898/154203.png?access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw
+  LatLongToPixelXY(latitude, longitude, levelOfDetail) {
+    function Clip(n,minValue,maxValue) { return Math.min(Math.max(n, minValue), maxValue); };
+    let x = (longitude + 180) / 360; 
+    let sinLatitude = Math.sin(latitude * Math.PI / 180);
+    let y = 0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI);
+    let mapSize = 256 << levelOfDetail;
+    let pixelX = Clip(x * mapSize + 0.5, 0, mapSize - 1);
+    let pixelY = Clip(y * mapSize + 0.5, 0, mapSize - 1);
+    return [ pixelX, pixelY ];
+  },
   */
 
-  function imageFulfill(tile) {
-    tile.mime = ".png";
-    tile.token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw";
-
-    if(false) {
-      // TODO broken - the imageryProvider is providing images that are wrong in the y position....
-      var p2 = imageryProvider.requestImage(x,y,lod);
-      Cesium.when(p2,finalizetile).otherwise(function(error) {
-        console.log('image fetch error occured ', error);
-       });
-      return;
+  canvasReset() {
+    if(!this.canvas) {
+      let canvas_size = 256;
+      let canvas = this.canvas = document.createElement('canvas');
+      canvas.id = "canvas";
+      canvas.width = canvas_size;
+      canvas.height = canvas_size;
+      canvas.style.position = "absolute";
+      canvas.style.left = 0;
+      canvas.style.top = 0;
+      canvas.style.zIndex = -1;
     }
+    this.ctx = this.canvas.getContext("2d");
+    this.ctx.fillStyle = "#0000ff";
+    this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+  }
 
+  canvasPaint(image,extents) {
+    let x1 = extents.x1;
+    let x2 = extents.x2;
+    let y1 = extents.y1;
+    let y2 = extents.y2;
+    this.ctx.drawImage(image,x1,y1,x2-x1,y2-y1);
+  }
+
+  canvasMaterial() {
+    let material = new THREE.MeshPhongMaterial( { color:0xffffff, wireframe:false });
+    material.map = new THREE.Texture(this.canvas);
+    material.map.needsUpdate = true;
+    return material;
+  }
+
+  getExtents(lat,lon,lod,offset) {
+    // get the extent of a terrain tile overlapping this coordinate
+    let poi = Cesium.Cartographic.fromDegrees(lon,lat);
+    let txy = Cesium.terrainProvider.tilingScheme.positionToTileXY(poi,lod);
+    let tr = Cesium.terrainProvider.tilingScheme.tileXYToRectangle(txy.x,txy.y,lod);
+
+    // get the extent of an image tile overlapping this coordinate
+    let ixy = Cesium.imageProvider.tilingScheme.positionToTileXY(poi,lod);
+    ixy.y += offset;
+    let ir = Cesium.imageProvider.tilingScheme.tileXYToRectangle(ixy.x,ixy.y,lod);
+
+    // the width and height of the pixel buffer is as so
+    let pixels = 256;
+
+    // basically ( image northern latitude relative to terrain tile northern latitude ) * pixel height / ( terrain tile latitude extent )
+    let x1 = 0;
+    let x2 = pixels;
+    let y1 = (tr.north - ir.north) * pixels / (tr.north-tr.south);
+    let y2 = (tr.north - ir.south) * pixels / (tr.north-tr.south);
+
+    let extents = {
+      lod:lod,
+      ixy:ixy,
+      x1:x1,
+      y1:y1,
+      x2:x2,
+      y2:y2,
+    }
+    console.log(extents);
+    return extents;
+  }
+
+  getImageMaterial(lat,lon,lod,callback) {
+    let scope = this;
+    let extents1 = scope.getExtents(lat,lon,lod,0);
+    var p1 = Cesium.imageProvider.requestImage(extents1.ixy.x,extents1.ixy.y,lod);
+    Cesium.when(p1,function(image1) {
+      scope.canvasReset();
+      scope.canvasPaint(image1,extents1);
+      let extents2 = scope.getExtents(lat,lon,lod,1);
+      var p2 = Cesium.imageProvider.requestImage(extents2.ixy.x,extents2.ixy.y,lod);
+      Cesium.when(p2,function(image2) {
+        scope.canvasPaint(image2,extents2);
+        let material = scope.canvasMaterial();
+        callback(material);
+      });
+    });
+  }
+
+
+  /*
+  getImageURL() {
     // build URL for image by hand
     //https://beta.cesium.com/api/assets/3470/18/59898/154203.png?access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw
-    let imageurl = "https://beta.cesium.com/api/assets/3470/"+tile.lod+"/"+tile.x+"/"+tile.y+""+tile.mime+"?access_token="+tile.token;
-
-    // moved this local for speed...
-    imageurl = "images/"+lod+"/"+tile.x+"/"+tile.y+".png";
-
-    if(USE_LARGE_CANVAS) {
-      tile.image = new Image();
-      tile.image.onload = function(results) {
-        //console.log("================ got image");
-        //console.log(imageurl);
-        addToCanvas(tile);
-      };
-      tile.image.src = imageurl;
-    }
+    let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTEyZDdmYi05OTQ0LTQ3ZDAtYTAyNS1lNmFjOWMzN2JkYzUiLCJpZCI6NjksImlhdCI6MTQ4Nzc5MjM5MH0.tbT0fXHXtmMtyFPRguvjlNPupSukLUNab5pCIZgZWmw";
+    let imageurl = "https://beta.cesium.com/api/assets/3470/"+tile.lod+"/"+tile.x+"/"+tile.y+".png?access_token="+token;
+    //imageurl = "images/"+lod+"/"+tile.x+"/"+tile.y+".png";
+    let image = new Image();
+    image.onload = function(results) {
+    };
+    image.src = imageurl;
   }
+  */
 
-  // get some tiles (asynchronous)
-  for(i=0;i<16;i++) {
-    for(j=0;j<16;j++) {
-      let image = { scene:scene, lat:lat, lon:lon, lod:lod, x:x+i, y:y+(15-j), i:i, j:j };
-      images.push(image);
-      imageFulfill(image);
-    }
-  }
-
-  return images;
 }
+
+
+let imageServer = new ImageServer();
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// A tile provider abstraction
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+class TileServer  {
+  // https://cesium.com/blog/2015/08/10/introducing-3d-tiles/
+  // http://blog.mastermaps.com/2014/10/3d-terrains-with-cesium.html
+
+  constructor() {
+    if(!Cesium.terrainProvider) {
+      Cesium.terrainProvider = new Cesium.CesiumTerrainProvider({
+        requestVertexNormals : true, 
+        url:"https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles",
+      });
+    }    
+  }
+
+  ready(callback) {
+    Cesium.when(Cesium.terrainProvider.readyPromise).then(callback);
+  }
+
+  ground(lat,lon,lod,callback) {
+    let pointOfInterest = Cesium.Cartographic.fromDegrees(lon,lat);
+    Cesium.sampleTerrain(Cesium.terrainProvider,lod,[pointOfInterest]).then(function(groundResults) {
+      callback(groundResults[0].height);
+    });
+  }
+
+  tile(x,y,lod,callback) {
+    Cesium.when(Cesium.terrainProvider.requestTileGeometry(x,y,lod),function(tile){callback(tile)}).otherwise(function(error) {
+      console.error(error);
+    });
+  }
+
+  extent(lod) {
+    let scheme = {};
+    scheme.lod = lod;
+    scheme.w = Math.pow(2,lod+1);
+    scheme.h = Math.pow(2,lod);
+    scheme.ntiles = scheme.w*scheme.h;
+    scheme.wdeg = 360 / scheme.w;
+    scheme.hdeg = 180 / scheme.h;
+    scheme.meters_wide = 40070000 / scheme.w;
+    scheme.meters_tall = 39000000 / scheme.h; // TODO this may be wrong
+    return scheme;
+  }
+
+  xy2ll(x,y,lod) {
+    let scheme = this.extent(lod);
+    scheme.x = x;
+    scheme.y = y;
+    scheme.lon = 360 * x / scheme.w - 180;
+    scheme.lat = 90 - 180 * y / scheme.h;
+    return scheme;
+  }
+
+  ll2yx(lat,lon,lod) {
+    let scheme = this.extent(lod);
+    scheme.lon = lon;
+    scheme.lat = lat;
+    scheme.x = (180+lon) * scheme.w / 360;
+    scheme.y = ( 90-lat) * scheme.h / 180;
+    //let xy = Cesium.terrainProvider.tilingScheme.positionToTileXY(pointOfInterest,lod);
+    //Cesium.terrainProvider.tilingScheme.getNumberOfXTilesAtLevel(lod) * (180+lon) / 360;
+    //Cesium.terrainProvider.tilingScheme.getNumberOfYTilesAtLevel(lod) * ( 90-lat) / 180;
+    return scheme;
+  }
+}
+
+let tileServer = new TileServer();
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // aframe long lat positioned feature
@@ -295,12 +300,53 @@ AFRAME.registerComponent('a-ll', {
     let lat = this.data.lat;
     let lod = this.data.lod;
     let elevation = this.data.elevation;
-    let schema = tile_xy(lon,lat,lod);
-    let size = schema.meters_wide;
-    let x = schema.x*size;
-    let y = schema.y*size;
-    console.log(" x="+x+" y="+y+" elevation="+elevation);
-    this.el.setAttribute('position',{x:x,y:elevation,z:y});
+    let scheme = tileServer.ll2yx(lat,lon,lod);
+    let size = scheme.meters_wide;
+    let x = scheme.x*size;
+    let y = scheme.y*size;
+    this.el.setAttribute('position',{x:x,y:-y,z:elevation});
+  },
+});
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// aframe spatial box
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+AFRAME.registerComponent('a-llbox', {
+  schema: {
+     east: {type: 'number', default: 0},
+     west: {type: 'number', default: 0},
+    north: {type: 'number', default: 0},
+    south: {type: 'number', default: 0},
+      lat: {type: 'number', default: 0},
+      lon: {type: 'number', default: 0},
+      lod: {type: 'number', default: 15},
+     lat2: {type: 'number', default: 0},
+     lon2: {type: 'number', default: 0},
+    scale: {type: 'number', default: 1},
+    elevation: {type: 'number', default: 100},
+    color: {type: 'string', default: '#ff00ff' },
+  },
+  init: function() {
+
+    let lat = this.data.north * 180 / Math.PI;
+    let lon = this.data.west * 180 / Math.PI;
+    let lod = this.data.lod;
+
+    let elevation = this.data.elevation;
+    let scale = this.data.scale;
+    let scheme = tileServer.ll2yx(lat,lon,lod);
+    let size = scheme.meters_wide;
+    let x = scheme.x*size*scale;
+    let y = scheme.y*size*scale;
+    console.log("the dot is at x=" + x + " y=" + y + " lat="+lat + " lon="+lon);
+    this.material = new THREE.MeshPhongMaterial( { color:this.data.color, wireframe:false });
+    this.geometry = new THREE.SphereGeometry( 60, 32, 32 );
+    this.mesh = new THREE.Mesh(this.geometry,this.material);
+    this.el.setObject3D('mesh', this.mesh);
+    this.el.setAttribute('position',{x:x,y:-y,z:elevation});
+
   },
 });
 
@@ -313,39 +359,24 @@ var GLTFLoader = new THREE.GLTFLoader();
 AFRAME.registerComponent('a-building', {
 
   schema: {
-      lat: {type: 'number', default: 30.2645103},
-      lon: {type: 'number', default: -97.7438834},
-      lod: {type: 'number', default: 15},
-    scale: {type: 'number', default: 1},
+    lat: {type: 'number', default: 0},
+    lon: {type: 'number', default: 0},
+    lod: {type: 'number', default: 0},
+    x: {type: 'number', default: 0},
+    y: {type: 'number', default: 0},
   },
 
   init: function () {
 
     let scope = this;
-    let lon = this.data.lon;
+    let lon = this.data.lon; // this is used solely to derotate buildings
     let lat = this.data.lat;
     let lod = this.data.lod;
-    let scale = this.data.scale;
-    let scheme = tile_xy(lon,lat,lod);
-    let size = this.data.size = scheme.meters_wide;
-    let x = Cesium.terrainProvider.tilingScheme.getNumberOfXTilesAtLevel(lod) * (180+lon) / 360;
-    let y = Cesium.terrainProvider.tilingScheme.getNumberOfYTilesAtLevel(lod) * ( 90-lat) / 180;
 
-    x = Math.floor(x);
-    y = 32767 - Math.floor(y);
-
-
-    if(false) {
-      // make a test cube representing a building - about 10/th the size of the area in question...
-      this.geometry = new THREE.BoxBufferGeometry(size*scale/10,size*scale/10,size*scale/2); // test - will be centered rather than on edge
-      this.material = new THREE.MeshPhongMaterial( {color: '#AfA'} );
-      this.mesh = new THREE.Mesh(this.geometry,this.material); //, canvas_material);
-      this.el.setObject3D('mesh', this.mesh);
-      return;
-    }
+    let x = this.data.x;
+    let y = 32767 - Math.floor(this.data.y);
 
     let name = "tiles3d/"+lod+"/"+x+"/"+y+".gltf";
-    console.log("building loading "+ name );
     GLTFLoader.load(name,function ( gltf ) {
       // assets are pre-rotated for use with a globe! - but this isn't our use case - so reverse that out
       gltf.scene.rotateY(-lon*Math.PI/180);
@@ -357,12 +388,10 @@ AFRAME.registerComponent('a-building', {
       //console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
     },
     function ( error ) {
-      console.log( 'An error happened' );
-      console.log(error);
+      console.log("Building not found: " + name);
     });
   }
 });
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // aframe tile
@@ -373,13 +402,10 @@ AFRAME.registerComponent('a-building', {
 //  - not stretched vertically (one meter == 1 unit)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Cesium.terrainProvider = new Cesium.CesiumTerrainProvider({
-  requestVertexNormals : true, 
-  url:"https://assets.agi.com/stk-terrain/v1/tilesets/world/tiles",
-});
-
 AFRAME.registerComponent('a-tile', {
   schema: {
+    lat: {type: 'number', default: 0},
+    lon: {type: 'number', default: 0},
       x: {type: 'number', default: 0},
       y: {type: 'number', default: 0},
     lod: {type: 'number', default: 0},
@@ -391,19 +417,19 @@ AFRAME.registerComponent('a-tile', {
     let x = this.data.x;
     let y = this.data.y;
     let lod = this.data.lod;
-    Cesium.when(Cesium.terrainProvider.readyPromise).then(function() {
-      Cesium.when(Cesium.terrainProvider.requestTileGeometry(x,y,lod),function(tile){scope.makeGeometry(tile)}).otherwise(function(error) {
-        console.error(error);
-      });
-    });
+    tileServer.tile(x,y,lod,function(tile){scope.makeGeometry(tile)});
   },
   makeGeometry:function(tile) {
+    let scope = this;
     let x = this.data.x;
     let y = this.data.y;
+    let lon = this.data.lon; // this is used solely to derotate buildings
+    let lat = this.data.lat;
     let lod = this.data.lod;
-    let size = this.data.size; // tile_extent(lod).meters_wide; <- although tempting it is best not to sidestep cesium at a low level here
+    let size = this.data.size;
     let scale = this.data.scale;
     this.geometry = new THREE.Geometry();
+    // convert terrain to verts
     for (let i=0; i<tile._uValues.length; i++) {
       let vx = tile._uValues[i]*size/32767*scale;
       let vy = tile._vValues[i]*size/32767*scale;
@@ -411,16 +437,123 @@ AFRAME.registerComponent('a-tile', {
       var v = new THREE.Vector3(vx,vy,vz);
       this.geometry.vertices.push(v);
     }
+    // make faces for mesh
     for (let i=0; i<tile._indices.length-1; i=i+3) {
       this.geometry.faces.push(new THREE.Face3(tile._indices[i], tile._indices[i+1], tile._indices[i+2]));
     }
+    // tidy
     this.geometry.computeFaceNormals();
-    // separately drape image on geometry
-    //threejs_recomputeuv(this.geometry,this.u,this.v,this.uvrange);
-    //this.geometry = new THREE.BoxBufferGeometry(size*scale,size*scale,size*scale/1000); // test - will be centered rather than on edge
-    this.material = new THREE.MeshPhongMaterial( {color: '#AAA'} );
-    this.mesh = new THREE.Mesh(this.geometry,this.material); //, canvas_material);
-    this.el.setObject3D('mesh', this.mesh);
+
+    // this.geometry = new THREE.SphereGeometry( size*scale/2, 32, 32 );
+
+    // make uvs
+    let threejs_recomputeuv = function(geometry,x,y,scale) {
+      // express x and y in vertex space, ie, if a tile ranges from 0 to 100 and the total scale is 400 then x,y could say be 0, 100,200 or 300
+      let faces = geometry.faces;
+      geometry.faceVertexUvs[0] = [];
+      for (let i = 0; i < faces.length ; i++) {
+        let v1 = geometry.vertices[faces[i].a]; 
+        let v2 = geometry.vertices[faces[i].b]; 
+        let v3 = geometry.vertices[faces[i].c];
+        geometry.faceVertexUvs[0].push([
+            new THREE.Vector2((v1.x + x)/scale, ((v1.y + y)/scale) ),
+            new THREE.Vector2((v2.x + x)/scale, ((v2.y + y)/scale) ),
+            new THREE.Vector2((v3.x + x)/scale, ((v3.y + y)/scale) )
+        ]);
+      }
+      geometry.uvsNeedUpdate = true;
+    }
+    threejs_recomputeuv(this.geometry,0,0,size*scale);
+
+    // attach image
+    // TODO right now the image is fetched at the lat, lon - it should be fetched at the tile index
+    imageServer.getImageMaterial(lat,lon,lod,function(material) {
+      scope.mesh = new THREE.Mesh(scope.geometry,material);
+      scope.el.setObject3D('mesh', scope.mesh);
+      scope.el.setAttribute('position', { x:x*size*scale, y:-(y+1)*size*scale, z:0} );
+
+/*
+console.log("tile is at x=" + (x*size*scale) + " y=" + (y*size*scale));
+
+// TEST
+
+ // get tile coords as a test to compare tile and image
+ //let scheme = tileServer.ll2yx(lat,lon,lod);
+ //let xx = Math.floor(scheme.x);
+ //let yy = Math.floor(scheme.y);
+ //let scheme2 = tileServer.xy2ll(xx,yy,lod);
+ //console.log(scheme);
+
+ // back convert
+ //let scheme3 = tileServer.xy2ll(xx+1,yy+1,lod);
+ //console.log(scheme3.lon - scheme2.lon);
+ //console.log(scheme3.lat - scheme2.lat);
+
+ // get bounds of terrain tile
+ let poi = Cesium.Cartographic.fromDegrees(lon,lat);
+ let txy = Cesium.terrainProvider.tilingScheme.positionToTileXY(poi,lod);
+ let tr = Cesium.terrainProvider.tilingScheme.tileXYToRectangle(txy.x,txy.y,lod);
+ console.log("we think the terrain tile is at =============== lat="+lat + " lon="+lon);
+ console.log(poi);
+ console.log(txy);
+ console.log(tr);
+
+ // get bounds of image tile
+ let ixy = Cesium.imageProvider.tilingScheme.positionToTileXY(poi,lod);
+ let ir = Cesium.imageProvider.tilingScheme.tileXYToRectangle(ixy.x,ixy.y,lod);
+ console.log(ir);
+*/
+
+/*
+let mymaterial = new THREE.MeshPhongMaterial( { color:0xff0000, wireframe:false });
+let myw = tr.east-tr.west;
+let myh = tr.north-tr.south; myh = -myh;
+console.log(myw);
+let mymesh = new THREE.Mesh(new THREE.BoxGeometry( size * scale, size * scale, size ), mymaterial );
+mymesh.position.set( size*scale/2, size*scale/2, 0 );
+scope.mesh.add(mymesh);
+
+myw = (ir.east-ir.west) / myw;
+myh = -(ir.north-ir.south) / myh;
+console.log(myw);
+console.log(myh);
+let mymaterial2 = new THREE.MeshPhongMaterial( { color:0xff00ff, wireframe:false });
+let mymesh2 = new THREE.Mesh(new THREE.BoxGeometry(
+    size * scale * myw * 10000,
+    size * scale * myh * 10000,
+    size
+    ), mymaterial2 );
+mymesh2.position.set(
+  (tr.west-ir.west)*scale*size*10000,
+  (tr.north-ir.north)*scale*size*10000,
+  0);
+//scope.mesh.add(mymesh2);
+
+//console.log( Cesium.imageProvider.tilingScheme.getNumberOfXTilesAtLevel(lod) * (180+lon) / 360 );
+//console.log( Cesium.imageProvider.tilingScheme.getNumberOfYTilesAtLevel(lod) * ( 90-lat) / 180 );
+*/
+
+/*
+var canvas = document.getElementById("myCanvas");
+var ctx = canvas.getContext("2d");
+ctx.fillStyle = "#FF0000";
+ctx.fillRect(300 + (tr.west) * 100,
+             300 - (tr.north) * 100,
+             300 + (tr.east-tr.west) * 100,
+             300 + (tr.north-tr.south) * 100
+            );
+
+ctx.fillStyle = "#FF00FF";
+ctx.fillRect(300 + (ir.west) * 100,
+             300 - (ir.north) * 100,
+             300 + (ir.east-ir.west) * 100,
+             300 + (ir.north-ir.south) * 100
+            );
+*/
+
+
+    });
+
   },
 
 });
@@ -436,101 +569,74 @@ AFRAME.registerComponent('a-terrain', {
            lon: {type: 'number', default:    0},     // longitude
            lod: {type: 'number', default:    0},     // zoom level for tiles
           size: {type: 'number', default:    0},     // where is the ground (recomputed periodically)
-         scale: {type: 'number', default:    0.001}, // scaling for landscape - 1 = 1 meter
+         scale: {type: 'number', default:    1}, // scaling for landscape - 1 = 1 meter
         ground: {type: 'number', default:    0},     // where is the ground (recomputed periodically)
      elevation: {type: 'number', default:  1000},    // meters above the ground should the origin be (for camera)
       pollRate: {type: 'number', default:    0},     // query user geolocation via geolocation api
   },
 
-////////// test
-
-  GroundResolution:function(latitude, levelOfDetail) {
-    let EarthRadius = 6378137;
-    let mapSize = 256 << levelOfDetail;
-    return Math.cos(latitude * Math.PI / 180) * 2 * Math.PI * EarthRadius / mapSize;
-  },
-  LatLongToPixelXY:function(latitude, longitude, levelOfDetail) {
-    function Clip(n,minValue,maxValue) { return Math.min(Math.max(n, minValue), maxValue); };
-    let x = (longitude + 180) / 360; 
-    let sinLatitude = Math.sin(latitude * Math.PI / 180);
-    let y = 0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI);
-    let mapSize = 256 << levelOfDetail;
-    let pixelX = Clip(x * mapSize + 0.5, 0, mapSize - 1);
-    let pixelY = Clip(y * mapSize + 0.5, 0, mapSize - 1);
-    return [ pixelX, pixelY ];
-  },
-//////////////
-
   init: function() {
     let scope = this;
-
-    // TEST
-    //setupCanvas();
-    //loadImages(scene,imageryProvider,lon,lat,18);
-
-//let g = this.GroundResolution(this.data.lat,this.data.lod);
-//console.log("Ground Resolution at this LOD for bing images is = "+g);
-//let p = this.LatLongToPixelXY(this.data.lat,this.data.lon,this.data.lod);
-//console.log(p);
-
     // wait for cesium and then render current focus
-    Cesium.when(Cesium.terrainProvider.readyPromise).then(function(){
+    tileServer.ready( imageServer.ready ( function(){
       // add listeners to poll user location periodically at specified rate
       scope.getLocation();
       // temporary - add listeners for user input for now (this may be removed - it acts as a helper for debugging)
       scope.getUserInput();
       // Goto this position, updating tiles and generally showing a view here
       scope.updateAll();
-    });
+    }));
   },
 
   updateTile: function(data,x,y) {
-    // Add tiles as needed
-    try {
-      let lat = data.lat;
-      let lon = data.lon;
-      let lod = data.lod;
-      let scale = data.scale;
-      let ground = data.ground;
-      let size = data.size;
-      // define a unique key per integer tile index
-      let key = "tile-"+x+"-"+y+"-"+lod;
-      // find tile if made
-      let tile = this.el.querySelector("#"+key);
-      if(!tile) {
-        // make tile if needed
-        let element = document.createElement('a-entity');
-        element.setAttribute('id',key);
-        element.setAttribute('a-tile', { x:x, y:y, lod:lod, size:size, scale:scale });
-        element.setAttribute('position', { x:x*size*scale, y:-y*size*scale, z:0} );
-        this.el.appendChild(element);
-        // make building also (unfortunately it needs to know approximate latitude and longitude to unrotate frame of reference)
-        element = document.createElement('a-entity');
-        element.setAttribute('id',key);
-        element.setAttribute('a-building',{ lat:lat, lon:lon, lod:lod, x:x, y:y, size:size, scale:scale });
-        element.setAttribute('position', { x:(x+0.5)*size*scale, y:-(y-0.5)*size*scale, z:0*scale} );
-        element.setAttribute('scale', {x:scale, y:scale, z:scale });
-        this.el.appendChild(element);
-      }
-    } catch(e) { console.error(e); };
+    // unfortunately approximate lat and lon are needed to derotate buildings
+    let lat = data.lat;
+    let lon = data.lon;
+    let lod = data.lod;
+    let scale = data.scale;
+    let ground = data.ground;
+    let size = data.size;
+    // define a unique key per integer tile index
+    let key = "tile-"+x+"-"+y+"-"+lod;
+    // find tile if made
+    let tile = this.el.querySelector("#"+key);
+    if(!tile) {      
+      // make tile if needed
+      let land = document.createElement('a-entity');
+      land.setAttribute('id',key);
+      land.setAttribute('a-tile', { x:x, y:y, lod:lod, size:size, scale:scale, lat:lat, lon:lon });
+      //element.setAttribute('position', { x:x*size*scale, y:-(y+1)*size*scale, z:0} ); // <- done in child for now
+      this.el.appendChild(land);
+      // make building also (unfortunately it needs to know approximate latitude and longitude to unrotate frame of reference)
+      let building = document.createElement('a-entity');
+      building.setAttribute('id',key);
+      building.setAttribute('a-building',{ lat:lat, lon:lon, lod:lod, x:x, y:y });
+      building.setAttribute('position', { x:(x+0.5)*size*scale, y:-(y-0.5+1)*size*scale, z:0*scale} );
+      building.setAttribute('scale', {x:scale, y:scale, z:scale });
+      this.el.appendChild(building);
+    }
   },
 
-  updateTilesAll: function(xy) {
-    try {
-      let data = this.data;
-      let lat = data.lat;
-      let lon = data.lon;
-      let lod = data.lod;
-      let size = data.size;
-      // TODO improve region to paint determination
-      for(let i = -2; i<2;i++) {
-        for(let j = -2; j<2;j++) {
-          i = j = 0;
-          this.updateTile(data,data.xy.x+i,data.xy.y+j);
-          return;
-        }
+  updateTilesAll: function() {
+    let data = this.data;
+    let lat = data.lat;
+    let lon = data.lon;
+    let lod = data.lod;
+    // get pov fractional tile coordinates directly - bypassing cesium because fractional coordinates are desired
+    let scheme = tileServer.ll2yx(lat,lon,lod);
+    let x = data.x = scheme.x;
+    let y = data.y = scheme.y;
+    let xy = data.xy = { x:Math.floor(x), y:Math.floor(y) };
+    // re-get spatial coverage of a tile at this LOD in meters and remember it (TODO can do this by asking Cesium instead also?)
+    let size = data.size = scheme.meters_wide;
+    // TODO improve region to paint determination
+    for(let i = -2; i<2;i++) {
+      for(let j = -2; j<2;j++) {
+        i = j = 0;
+        this.updateTile(data,xy.x+i,xy.y+j);
+        return;
       }
-    } catch(e) { console.error(e); };
+    }
   },
 
   updatePose: function() {
@@ -544,53 +650,32 @@ AFRAME.registerComponent('a-terrain', {
       let scale = data.scale;
       let elevation = data.elevation;
       let ground = data.ground;
-      let schema = tile_xy(lon,lat,lod);
-      let size = data.size = schema.meters_wide;
-      let x = Cesium.terrainProvider.tilingScheme.getNumberOfXTilesAtLevel(lod) * (180+lon) / 360;
-      let y = Cesium.terrainProvider.tilingScheme.getNumberOfYTilesAtLevel(lod) * ( 90-lat) / 180;
-      // the parent gets centered at this latitude and longitude; having the net effect of having tiles at that lat lon overlap 0,0,0
-      // have to adjust Y one tile over for various fiddly reasons
-      this.el.setAttribute('position', { x:-x*size*scale, y:y*size*scale-size*scale, z:-(ground+elevation)*scale });
+      let scheme = tileServer.ll2yx(lat,lon,lod);
+      let size = data.size = scheme.meters_wide;
+      let x = scheme.x * size * scale;
+      let y = -scheme.y * size * scale; // -size*scale;
+      this.el.setAttribute('position', { x:-x, y:-y, z:-(ground+elevation)*scale });
     } catch(e) { console.error(e); };
   },
 
   updateAll: function() {
     let scope = this;
-    let data = this.data;
-    let lat = data.lat;
-    let lon = data.lon;
-    let lod = data.lod;
-    let scale = data.scale;
-
-    // get ground height
-    let pointOfInterest = Cesium.Cartographic.fromDegrees(lon,lat);
-    Cesium.sampleTerrain(Cesium.terrainProvider, lod,[pointOfInterest]).then(function(groundResults) {
-
-      // set ground height for entire world (distance of pov from tile geometry)
-      data.ground = groundResults[0].height;
-
-      // get pov fractional tile coordinates directly - bypassing cesium because fractional coordinates are desired
-      let schema = tile_xy(lon,lat,lod);
-      let x = data.x = Cesium.terrainProvider.tilingScheme.getNumberOfXTilesAtLevel(lod) * (180+lon) / 360;
-      let y = data.y = Cesium.terrainProvider.tilingScheme.getNumberOfYTilesAtLevel(lod) * ( 90-lat) / 180;
-
-      //let xy = Cesium.terrainProvider.tilingScheme.positionToTileXY(pointOfInterest,lod); // <- this is the correct way as per tile provider
-      let xy = data.xy = { x:Math.floor(x), y:Math.floor(y) };
-      console.log("centering at " + xy.x + " " + xy.y);
-
-      // re-get spatial coverage of a tile at this LOD in meters and remember it (TODO can do this by asking Cesium instead also?)
-      let size = data.size = schema.meters_wide;
-
+    let lat = this.data.lat;
+    let lon = this.data.lon;
+    let lod = this.data.lod;
+    tileServer.ground(lat,lon,lod,function(ground) {
+      // reset ground height for entire world (distance of pov from tile geometry)
+      scope.data.ground = ground;
       // now paint all
-      scope.updateTilesAll(xy);
-
+      scope.updateTilesAll();
       // and move pov
       scope.updatePose();
-
     });
-    // optional - force an extra (inaccurate) update immediately because I'd like to not wait for the terrain sampling to return
+    // optional - force an extra (inaccurate) update immediately to reduce jerkyness of a wait for the terrain sampling to return above
     scope.updatePose();
   },
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   getLocation: function() {
     if(!navigator.geolocation) return;
@@ -644,25 +729,19 @@ AFRAME.registerComponent('a-terrain', {
 
 /*
 
+- top down navigation support
+
+  - introduce a concept of distance and directly calculate the lod from that distance
+  - let player change distance
+  - let player pan
+
 - images
+
     - get the exact longitude latitude extents of my tile
     - ask cesium for all those tiles
     - ideally getting 4 - at the closest larger extent
     - paint those 4 - can use a shader if i wish
 
-
-- get buildings to be exact as well; something is wrong with building index
-
-- tighter controls for navigation
-
-top down mode
-  - render all tiles around the lon,lat
-  - on select and drag ; at the specific zoom we are at there is a pixel displacement exactly equal to some long lat; we can stay in whatever coords work
-  - on pinch zoom; there is a specific relationship between pinch points and zoom... 
-  - switch lods at different zoom levels
-      - at some distance you can see all tiles; basically the triangle formed by the fov and the width
-      - when the fov is < 1/2 of that it seems to make sense to zoom...
-      - so i can calculate the best lod for any visible width ...
 
 
 */
