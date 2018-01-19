@@ -36,11 +36,7 @@ registerAframeClickDragComponent(window.AFRAME);
 <a-box position="0 0 -100" color="#0000ff"></a-box>
 
 <!-- a piece of terrain -->
-
-
-<!-- <a-entity a-terrain="lat:38.2945647; lon:-97.745361328124; lod:15, elevation:100"> -->
-
-<a-entity a-terrain="lat:30.267333984375; lon:-97.745361328124; lod:15, elevation:100"> 
+<a-entity a-terrain="scale:0.001; lat:30.267333984375; lon:-97.745361328124; lod:15, elevation:100"> 
 </a-entity>
 
 <!-- a camera; controls make it ignore the y position so it is wrapped -->
@@ -52,21 +48,11 @@ registerAframeClickDragComponent(window.AFRAME);
 
 <!-- --------------------------------------------------------------------------------------------------- -->
 
-<!-- a tree at a point -->
+<!-- a tree at a point 
 <a-entity a-ll="lat:30.267333984375; lon:-97.745361328125; lod:15; elevation:120" scale="100 100 100">
 <a-entity obj-model="obj: #tree-obj; mtl: #tree-mtl"></a-entity>
 </a-entity>
-
-<!-- the west and northen most point of a tile at lat:30.267333984375; lon:-97.745361328124 -->
-<a-entity a-llbox="north:0.5282646338281176; west:-1.7059783837273186; color:#ff0000"></a-entity>
-<!-- the east and southern most point of a tile at lat:30.267333984375; lon:-97.745361328124 -->
-<a-entity a-llbox="north:0.5281687600288749; west:-1.7058825099280759; color:#dd0000"></a-entity>
-<!-- the west and northern most point of an image tile at lat:30.267333984375; lon:-97.745361328124 -->
-<a-entity a-llbox="north:0.5282859663709873; west:-1.7059783837273186; color:#ff00ff"></a-entity>
-<!-- the east and southern most point of an image tile at lat:30.267333984375; lon:-97.745361328124 -->
-<a-entity a-llbox="north:0.5282031608252193; west:-1.7058825099280759; color:#ff0088"></a-entity>
-
-
+-->
 
 <!-- a constrained camera 
 <a-entity id="camera" camera="fov:45" look-controls universal-controls="fly: true; movementEasing: 15; movementAcceleration: 80;">
@@ -131,10 +117,4 @@ How long visible: 3 weeks<br/>
 Token style: totoro<br/>
 </div>
 -->
-
-
-
-
-
-
 
