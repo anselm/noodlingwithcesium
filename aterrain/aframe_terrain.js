@@ -89,7 +89,6 @@ class ImageServer {
     let EarthRadius = 6378137;
     let EarthCircumference = 40054700.36; // 2*Math.PI*EarthRadius;
     let tilesWide = 2 << lod;
-    console.log(tilesWide);
     return EarthCircumference/tilesWide;
   }
   groundResolution(latitude, levelOfDetail) {
@@ -111,39 +110,32 @@ class ImageServer {
   },
   */
 
-  canvasReset() {
-    if(!this.canvas) {
-      let canvas_size = 256;
-      let canvas = this.canvas = document.createElement('canvas');
-      canvas.id = "canvas";
-      canvas.width = canvas_size;
-      canvas.height = canvas_size;
-      canvas.style.position = "absolute";
-      canvas.style.left = 0;
-      canvas.style.top = 0;
-      canvas.style.zIndex = -1;
+  scratchpad() {
+    let size = 256; // bing tile size
+    let canvas = document.createElement('canvas');
+    canvas.id = "canvas";
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.position = "absolute";
+    canvas.style.left = 0;
+    canvas.style.top = 0;
+    canvas.style.zIndex = -1;
+    canvas.ctx = canvas.getContext("2d");
+    //canvas.ctx.fillStyle = "#0000ff";
+    //canvas.ctx.fillRect(0,0,size,size);
+    canvas.paint = function(image,extent) {
+      canvas.ctx.drawImage(image,extent.x1,extent.y1,extent.x2-extent.x1,extent.y2-extent.y1);
     }
-    this.ctx = this.canvas.getContext("2d");
-    this.ctx.fillStyle = "#0000ff";
-    this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+    canvas.material = function() {
+      let material = new THREE.MeshPhongMaterial( { color:0xffffff, wireframe:false });
+      material.map = new THREE.Texture(canvas);
+      material.map.needsUpdate = true;
+      return material;
+    }
+    return canvas;
   }
 
-  canvasPaint(image,extents) {
-    let x1 = extents.x1;
-    let x2 = extents.x2;
-    let y1 = extents.y1;
-    let y2 = extents.y2;
-    this.ctx.drawImage(image,x1,y1,x2-x1,y2-y1);
-  }
-
-  canvasMaterial() {
-    let material = new THREE.MeshPhongMaterial( { color:0xffffff, wireframe:false });
-    material.map = new THREE.Texture(this.canvas);
-    material.map.needsUpdate = true;
-    return material;
-  }
-
-  getExtents(lat,lon,lod,offset) {
+  getExtent(lat,lon,lod,offset) {
     // get the extent of a terrain tile overlapping this coordinate
     let poi = Cesium.Cartographic.fromDegrees(lon,lat);
     let txy = Cesium.terrainProvider.tilingScheme.positionToTileXY(poi,lod);
@@ -171,25 +163,41 @@ class ImageServer {
       x2:x2,
       y2:y2,
     }
-    console.log(extents);
     return extents;
   }
 
-  getImageMaterial(lat,lon,lod,callback) {
-    let scope = this;
-    let extents1 = scope.getExtents(lat,lon,lod,0);
-    var p1 = Cesium.imageProvider.requestImage(extents1.ixy.x,extents1.ixy.y,lod);
-    Cesium.when(p1,function(image1) {
-      scope.canvasReset();
-      scope.canvasPaint(image1,extents1);
-      let extents2 = scope.getExtents(lat,lon,lod,1);
-      var p2 = Cesium.imageProvider.requestImage(extents2.ixy.x,extents2.ixy.y,lod);
-      Cesium.when(p2,function(image2) {
-        scope.canvasPaint(image2,extents2);
-        let material = scope.canvasMaterial();
-        callback(material);
+  makePromise(scratch,extent,resolve) {
+    let promise = function() {
+      let request = Cesium.imageProvider.requestImage(extent.ixy.x,extent.ixy.y,extent.lod);
+      Cesium.when(request,function(image) {
+        scratch.paint(image,extent);
+        if(resolve)resolve();
       });
-    });
+    };
+    return promise;
+  }
+
+  getImageMaterial(lat,lon,lod,callback) {
+
+    // get a canvas (a basic canvas and a couple of helper methods I tacked onto it)
+    let scratch = this.scratchpad();
+
+    // this will be called last in the chain built below - it will return a nice material to the caller
+    let promise = function() {
+      callback(scratch.material());
+    };
+
+    for(let i = -2; i < 3; i++) {
+      // consider image extents that may overlap the tile extent that needs to be fully painted
+      let extent = this.getExtent(lat,lon,lod,i);
+      if(extent.y1>=256 || extent.y2<0)continue;
+      // accumulate a chain of functions that will be called in sequence to paint onto the tile area
+      promise = this.makePromise(scratch,extent,promise);
+    }
+
+    // do it
+    promise();
+
   }
 
 
@@ -375,9 +383,9 @@ AFRAME.registerComponent('a-building', {
 
     let x = this.data.x;
     let y = 32767 - Math.floor(this.data.y);
+    let url = "tiles3d/"+lod+"/"+x+"/"+y+".gltf";
 
-    let name = "tiles3d/"+lod+"/"+x+"/"+y+".gltf";
-    GLTFLoader.load(name,function ( gltf ) {
+    GLTFLoader.load(url,function ( gltf ) {
       // assets are pre-rotated for use with a globe! - but this isn't our use case - so reverse that out
       gltf.scene.rotateY(-lon*Math.PI/180);
       gltf.scene.rotateY(-Math.PI/2);
@@ -385,12 +393,11 @@ AFRAME.registerComponent('a-building', {
       scope.el.setObject3D('mesh',gltf.scene);
     },
     function ( xhr ) {
-      //console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
     },
     function ( error ) {
-      console.log("Building not found: " + name);
     });
   }
+
 });
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

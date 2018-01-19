@@ -41,6 +41,16 @@ registerAframeClickDragComponent(window.AFRAME);
 <!-- <a-entity a-terrain="lat:38.2945647; lon:-97.745361328124; lod:15, elevation:100"> -->
 
 <a-entity a-terrain="lat:30.267333984375; lon:-97.745361328124; lod:15, elevation:100"> 
+</a-entity>
+
+<!-- a camera; controls make it ignore the y position so it is wrapped -->
+<a-entity id='cameraWrapper' position="0 -1.6 0">
+<a-camera id="camera" position="0 0 0" look-controls universal-controls ></a-camera>
+</a-entity>
+
+</a-scene>
+
+<!-- --------------------------------------------------------------------------------------------------- -->
 
 <!-- a tree at a point -->
 <a-entity a-ll="lat:30.267333984375; lon:-97.745361328125; lod:15; elevation:120" scale="100 100 100">
@@ -57,16 +67,6 @@ registerAframeClickDragComponent(window.AFRAME);
 <a-entity a-llbox="north:0.5282031608252193; west:-1.7058825099280759; color:#ff0088"></a-entity>
 
 
-</a-entity>
-
-<!-- a camera; controls make it ignore the y position so it is wrapped -->
-<a-entity id='cameraWrapper' position="0 -1.6 0">
-<a-camera id="camera" position="0 0 0" look-controls universal-controls ></a-camera>
-</a-entity>
-
-</a-scene>
-
-<!-- --------------------------------------------------------------------------------------------------- -->
 
 <!-- a constrained camera 
 <a-entity id="camera" camera="fov:45" look-controls universal-controls="fly: true; movementEasing: 15; movementAcceleration: 80;">
